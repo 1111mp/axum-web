@@ -1,0 +1,17 @@
+/target/
+
+.DS_Store
+
+.env
+
+### Intellij ###
+# Ignore all IDEA files. This means you may have to rebuild the project on your
+# new machines at times, but avoids checking in a bunch of files which are not
+# generally relevant to other developers.
+.idea
+
+# CMake
+cmake-build-*/
+
+# IntelliJ
+out/

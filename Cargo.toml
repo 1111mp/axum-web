@@ -1,0 +1,31 @@
+[package]
+name = "axum-web"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+members = [".", "entity", "migration"]
+
+[dependencies]
+entity = { path = "entity" }
+migration = { path = "migration" }
+anyhow = "1.0.75"
+axum = "0.7.2"
+axum-macros = "0.4.0"
+dotenvy = "0.15.7"
+sea-orm = { version = "0.12.10", features = [
+  "debug-print",
+  "sqlx-mysql",
+  "runtime-tokio-native-tls",
+  "macros",
+] }
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+tokio = { version = "1.35.0", features = ["full"] }
+tower-http = { version = "0.5.0", features = ["cors"] }
+tracing-subscriber = "0.3.18"
+jsonwebtoken = "9.2.0"
+bcrypt = "0.15.0"
+chrono = "0.4.31"
