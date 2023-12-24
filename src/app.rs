@@ -6,6 +6,8 @@ use axum::{
 };
 use migration::{Migrator, MigratorTrait};
 use sea_orm::Database;
+use tower::ServiceBuilder;
+use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
 
 use crate::{
@@ -38,33 +40,37 @@ pub async fn start() -> anyhow::Result<()> {
             "/api",
             Router::new()
                 .merge(routes::post::create_route())
-                .route_layer(middleware::from_fn(middlewares::jwt_auth::auth_guard))
+                .route_layer(middleware::from_fn(middlewares::cookie_auth::cookie_guard))
                 .merge(routes::user::create_route()),
         )
         .layer(
-            // https://github.com/tower-rs/tower-http/issues/194
-            CorsLayer::new()
-                .allow_credentials(true)
-                .allow_headers([
-                    header::ACCEPT,
-                    header::ACCEPT_LANGUAGE,
-                    header::AUTHORIZATION,
-                    header::CONTENT_LANGUAGE,
-                    header::CONTENT_TYPE,
-                ])
-                .allow_methods([
-                    Method::GET,
-                    Method::POST,
-                    Method::PUT,
-                    Method::DELETE,
-                    Method::HEAD,
-                    Method::OPTIONS,
-                ])
-                .allow_origin([
-                    "http://127.0.0.1:3000".parse().unwrap(),
-                    "http://127.0.0.1:1212".parse().unwrap(),
-                ])
-                .max_age(Duration::from_secs(60 * 60)),
+            ServiceBuilder::new()
+                .layer(
+                    // https://github.com/tower-rs/tower-http/issues/194
+                    CorsLayer::new()
+                        .allow_credentials(true)
+                        .allow_headers([
+                            header::ACCEPT,
+                            header::ACCEPT_LANGUAGE,
+                            header::AUTHORIZATION,
+                            header::CONTENT_LANGUAGE,
+                            header::CONTENT_TYPE,
+                        ])
+                        .allow_methods([
+                            Method::GET,
+                            Method::POST,
+                            Method::PUT,
+                            Method::DELETE,
+                            Method::HEAD,
+                            Method::OPTIONS,
+                        ])
+                        .allow_origin([
+                            "http://127.0.0.1:3000".parse().unwrap(),
+                            "http://127.0.0.1:1212".parse().unwrap(),
+                        ])
+                        .max_age(Duration::from_secs(60 * 60)),
+                )
+                .layer(CookieManagerLayer::new()),
         )
         .with_state(state);
 

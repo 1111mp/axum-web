@@ -1,17 +1,23 @@
+use std::env;
+
 use axum::{
     extract::{rejection::JsonRejection, State},
-    http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::post,
     Json, Router,
 };
 use axum_macros::debug_handler;
+use bcrypt::verify;
 use entity::{prelude::User, user};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::Deserialize;
 use serde_json::json;
+use tower_cookies::{Cookie, Cookies};
 
-use crate::{routes::make_resp::make_resp_from_db_err, utils::jwt::jwt_encode};
+use crate::utils::{
+    http_resp::{make_resp_from_db_err, JsonResponse},
+    jwt::jwt_encode,
+};
 
 use super::AppState;
 
@@ -29,17 +35,14 @@ fn make_api() -> Router<AppState> {
 async fn user_signup(
     State(state): State<AppState>,
     payload: Result<Json<CreateUser>, JsonRejection>,
-) -> impl IntoResponse {
+) -> Response {
     let Json(input) = match payload {
         Ok(input) => input,
         Err(err) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "code": 400,
-                    "message": err.to_string()
-                })),
-            );
+            return JsonResponse::<()>::BadRequest {
+                message: err.to_string(),
+            }
+            .into_response();
         }
     };
 
@@ -58,13 +61,11 @@ async fn user_signup(
             let user_json = json.as_object_mut().unwrap();
             user_json.remove("password");
 
-            (
-                StatusCode::OK,
-                Json(json!({
-                    "code": 200,
-                    "data": user_json
-                })),
-            )
+            JsonResponse::OK {
+                message: "success".to_string(),
+                data: Some(user_json),
+            }
+            .into_response()
         }
         Err(err) => make_resp_from_db_err(&err),
     }
@@ -73,18 +74,16 @@ async fn user_signup(
 #[debug_handler]
 async fn user_signin(
     State(state): State<AppState>,
+    cookies: Cookies,
     payload: Result<Json<LoginUser>, JsonRejection>,
-) -> impl IntoResponse {
+) -> Response {
     let Json(input) = match payload {
         Ok(input) => input,
         Err(err) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "code": 400,
-                    "message": err.to_string()
-                })),
-            );
+            return JsonResponse::<()>::BadRequest {
+                message: err.to_string(),
+            }
+            .into_response()
         }
     };
 
@@ -96,13 +95,11 @@ async fn user_signin(
         Ok(model) => match model {
             Some(user) => user,
             None => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(json!({
-                        "code": 404,
-                        "message": format!("No user found with email {}", &input.email)
-                    })),
-                )
+                return JsonResponse::<()>::NotFound {
+                    // error message is "Invalid email or password" maybe better
+                    message: format!("No user found with email {}", &input.email),
+                }
+                .into_response();
             }
         },
         Err(err) => return make_resp_from_db_err(&err),
@@ -111,28 +108,46 @@ async fn user_signin(
     let token = match jwt_encode(&user_model) {
         Ok(t) => t,
         Err(err) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "code": 500,
-                    "message": err.to_string()
-                })),
-            )
+            return JsonResponse::<()>::InternalServerError {
+                message: err.to_string(),
+            }
+            .into_response();
         }
     };
+
+    // verify password
+    let valid = if let Ok(valid) = verify(&input.password, &user_model.password) {
+        valid
+    } else {
+        return JsonResponse::<()>::Unauthorized {
+            message: "Invalid email or password".to_string(),
+        }
+        .into_response();
+    };
+
+    if !valid {
+        return JsonResponse::<()>::Unauthorized {
+            message: "Invalid email or password".to_string(),
+        }
+        .into_response();
+    }
+
+    let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
+    let mut cookie = Cookie::new(name.clone(), token.clone());
+    cookie.set_secure(true);
+    cookie.set_http_only(true);
+    cookies.add(cookie);
 
     let mut json = json!(&user_model).clone();
     let user_json = json.as_object_mut().unwrap();
     user_json.remove("password");
-    user_json.insert("token".to_string(), json!(token));
+    user_json.insert("token".to_string(), json!(&token));
 
-    (
-        StatusCode::OK,
-        Json(json!({
-            "code": 200,
-            "data": user_json
-        })),
-    )
+    JsonResponse::OK {
+        message: "success".to_string(),
+        data: Some(user_json),
+    }
+    .into_response()
 }
 
 #[derive(Debug, Deserialize)]

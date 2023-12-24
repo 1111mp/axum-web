@@ -1,16 +1,17 @@
 use axum::{
     extract::{rejection::PathRejection, Path, State},
-    http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
+    Extension, Router,
 };
 use axum_macros::debug_handler;
 use entity::prelude::Post;
 use sea_orm::EntityTrait;
-use serde_json::json;
 
-use crate::routes::make_resp::make_resp_from_db_err;
+use crate::{
+    middlewares::current_user::CurrentUser,
+    utils::http_resp::{make_resp_from_db_err, JsonResponse},
+};
 
 use super::AppState;
 
@@ -24,40 +25,35 @@ fn make_api() -> Router<AppState> {
 
 #[debug_handler]
 async fn get_one(
-    payload: Result<Path<i32>, PathRejection>,
     State(state): State<AppState>,
-) -> impl IntoResponse {
+    Extension(current_user): Extension<CurrentUser>,
+    payload: Result<Path<i32>, PathRejection>,
+) -> Response {
     let Path(id) = match payload {
         Ok(id) => id,
         Err(err) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                  "code": 400,
-                  "message": err.to_string()
-                })),
-            );
+            return JsonResponse::<()>::BadRequest {
+                message: err.to_string(),
+            }
+            .into_response();
         }
     };
+
+    println!("{:?}", current_user);
 
     let ret = Post::find_by_id(id).one(&state.db).await;
 
     match ret {
         Ok(opt) => match opt {
-            Some(post) => (
-                StatusCode::OK,
-                Json(json!({
-                  "code": 200,
-                  "data": post
-                })),
-            ),
-            None => (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                  "code": 404,
-                  "message": format!("No post found with id {}", &id)
-                })),
-            ),
+            Some(post) => JsonResponse::OK {
+                message: "success".to_string(),
+                data: Some(post),
+            }
+            .into_response(),
+            None => JsonResponse::<()>::NotFound {
+                message: format!("No post found with id {}", &id),
+            }
+            .into_response(),
         },
         Err(err) => make_resp_from_db_err(&err),
     }
