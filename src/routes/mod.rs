@@ -1,5 +1,6 @@
 use sea_orm::DatabaseConnection;
 
+mod extractor;
 pub mod post;
 pub mod user;
 
