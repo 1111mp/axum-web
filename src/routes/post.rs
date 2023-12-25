@@ -12,8 +12,8 @@ use validator::Validate;
 
 use crate::{
     middlewares::current_user::CurrentUser,
-    routes::extractor::PathParser,
-    utils::http_resp::{make_resp_from_db_err, JsonResponse},
+    routes::{exception::CatchedError, extractor::PathParser},
+    utils::http_resp::JsonResponse,
 };
 
 use super::AppState;
@@ -37,23 +37,20 @@ async fn get_one(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     PathParser(param): PathParser<PostParam>,
-) -> Response {
+) -> Result<Response, CatchedError> {
     println!("{:?}", current_user);
 
-    let ret = Post::find_by_id(param.id).one(&state.db).await;
+    let model = Post::find_by_id(param.id).one(&state.db).await?;
 
-    match ret {
-        Ok(opt) => match opt {
-            Some(post) => JsonResponse::OK {
-                message: "success".to_string(),
-                data: Some(post),
-            }
-            .into_response(),
-            None => JsonResponse::<()>::NotFound {
-                message: format!("No post found with id {}", &param.id),
-            }
-            .into_response(),
-        },
-        Err(err) => make_resp_from_db_err(&err),
+    match model {
+        Some(post) => Ok(JsonResponse::OK {
+            message: "success".to_string(),
+            data: Some(post),
+        }
+        .into_response()),
+        None => Ok(JsonResponse::<()>::NotFound {
+            message: format!("No post found with id {}", &param.id),
+        }
+        .into_response()),
     }
 }

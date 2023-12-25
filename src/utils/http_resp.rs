@@ -3,7 +3,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use sea_orm::{DbErr, SqlErr};
 use serde::Serialize;
 use serde_json::json;
 
@@ -69,19 +68,4 @@ impl<T: Serialize> IntoResponse for JsonResponse<T> {
         }
         .into_response()
     }
-}
-
-pub fn make_resp_from_db_err(err: &DbErr) -> Response {
-    match err.sql_err() {
-        Some(SqlErr::UniqueConstraintViolation(msg)) => {
-            JsonResponse::<()>::InternalServerError { message: msg }
-        }
-        Some(sql_err) => JsonResponse::InternalServerError {
-            message: sql_err.to_string(),
-        },
-        None => JsonResponse::InternalServerError {
-            message: "Unknow Database Error".to_string(),
-        },
-    }
-    .into_response()
 }

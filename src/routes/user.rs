@@ -15,9 +15,9 @@ use serde_json::json;
 use tower_cookies::{Cookie, Cookies};
 use validator::Validate;
 
-use crate::utils::{
-    http_resp::{make_resp_from_db_err, JsonResponse},
-    jwt::jwt_encode,
+use crate::{
+    routes::exception::CatchedError,
+    utils::{http_resp::JsonResponse, jwt::jwt_encode},
 };
 
 use super::{extractor::JsonParser, AppState};
@@ -36,30 +36,25 @@ fn make_api() -> Router<AppState> {
 async fn user_signup(
     State(state): State<AppState>,
     JsonParser(input): JsonParser<CreateUser>,
-) -> Response {
-    let ret = user::ActiveModel {
+) -> Result<Response, CatchedError> {
+    let model = user::ActiveModel {
         name: Set(input.name),
         email: Set(input.email),
         password: Set(input.password),
         ..Default::default()
     }
     .insert(&state.db)
-    .await;
+    .await?;
 
-    match ret {
-        Ok(user) => {
-            let mut json = json!(&user);
-            let user_json = json.as_object_mut().unwrap();
-            user_json.remove("password");
+    let mut json = json!(&model);
+    let user_json = json.as_object_mut().unwrap();
+    user_json.remove("password");
 
-            JsonResponse::OK {
-                message: "success".to_string(),
-                data: Some(user_json),
-            }
-            .into_response()
-        }
-        Err(err) => make_resp_from_db_err(&err),
+    Ok(JsonResponse::OK {
+        message: "success".to_string(),
+        data: Some(user_json),
     }
+    .into_response())
 }
 
 #[debug_handler]
@@ -67,67 +62,46 @@ async fn user_signin(
     State(state): State<AppState>,
     cookies: Cookies,
     JsonParser(input): JsonParser<LoginUser>,
-) -> Response {
-    let user_model = match User::find()
+) -> Result<Response, CatchedError> {
+    let model = User::find()
         .filter(user::Column::Email.eq(&input.email))
         .one(&state.db)
-        .await
-    {
-        Ok(model) => match model {
-            Some(user) => user,
-            None => {
-                return JsonResponse::<()>::NotFound {
-                    // error message is "Invalid email or password" maybe better
-                    message: format!("No user found with email {}", &input.email),
-                }
-                .into_response();
-            }
-        },
-        Err(err) => return make_resp_from_db_err(&err),
+        .await?;
+
+    let user = if let Some(user) = model {
+        user
+    } else {
+        return Ok(JsonResponse::<()>::NotFound {
+            // error message is "Invalid email or password" maybe better
+            message: format!("No user found with email {}", &input.email),
+        }
+        .into_response());
     };
 
     // verify password
-    let valid = if let Ok(valid) = verify(&input.password, &user_model.password) {
-        valid
-    } else {
-        return JsonResponse::<()>::Unauthorized {
+    if !verify(&input.password, &user.password)? {
+        return Ok(JsonResponse::<()>::Unauthorized {
             message: "Invalid email or password".to_string(),
         }
-        .into_response();
-    };
-
-    if !valid {
-        return JsonResponse::<()>::Unauthorized {
-            message: "Invalid email or password".to_string(),
-        }
-        .into_response();
+        .into_response());
     }
 
-    let token = match jwt_encode(&user_model) {
-        Ok(t) => t,
-        Err(err) => {
-            return JsonResponse::<()>::InternalServerError {
-                message: err.to_string(),
-            }
-            .into_response();
-        }
-    };
-
+    let token = jwt_encode(&user)?;
     let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
-    let mut cookie = Cookie::new(name.clone(), token.clone());
+    let mut cookie = Cookie::new(name, token);
     cookie.set_secure(true);
     cookie.set_http_only(true);
     cookies.add(cookie);
 
-    let mut json = json!(&user_model).clone();
+    let mut json = json!(&user).clone();
     let user_json = json.as_object_mut().unwrap();
     user_json.remove("password");
 
-    JsonResponse::OK {
+    Ok(JsonResponse::OK {
         message: "success".to_string(),
         data: Some(user_json),
     }
-    .into_response()
+    .into_response())
 }
 
 #[derive(Debug, Deserialize, Validate)]
