@@ -12,8 +12,7 @@ use validator::Validate;
 
 use crate::{
     middlewares::current_user::CurrentUser,
-    routes::{exception::CatchedError, extractor::PathParser},
-    utils::http_resp::JsonResponse,
+    utils::{exception::KnownError, extractor::PathParser, http_resp::JsonResponse},
 };
 
 use super::AppState;
@@ -37,7 +36,7 @@ async fn get_one(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     PathParser(param): PathParser<PostParam>,
-) -> Result<Response, CatchedError> {
+) -> Result<Response, KnownError> {
     println!("{:?}", current_user);
 
     let model = Post::find_by_id(param.id).one(&state.db).await?;

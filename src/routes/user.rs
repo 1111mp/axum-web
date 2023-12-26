@@ -15,12 +15,11 @@ use serde_json::json;
 use tower_cookies::{Cookie, Cookies};
 use validator::Validate;
 
-use crate::{
-    routes::exception::CatchedError,
-    utils::{http_resp::JsonResponse, jwt::jwt_encode},
+use crate::utils::{
+    exception::KnownError, extractor::JsonParser, http_resp::JsonResponse, jwt::jwt_encode,
 };
 
-use super::{extractor::JsonParser, AppState};
+use super::AppState;
 
 pub fn create_route() -> Router<AppState> {
     Router::new().nest("/user", make_api())
@@ -36,7 +35,7 @@ fn make_api() -> Router<AppState> {
 async fn user_signup(
     State(state): State<AppState>,
     JsonParser(input): JsonParser<CreateUser>,
-) -> Result<Response, CatchedError> {
+) -> Result<Response, KnownError> {
     let model = user::ActiveModel {
         name: Set(input.name),
         email: Set(input.email),
@@ -62,7 +61,7 @@ async fn user_signin(
     State(state): State<AppState>,
     cookies: Cookies,
     JsonParser(input): JsonParser<LoginUser>,
-) -> Result<Response, CatchedError> {
+) -> Result<Response, KnownError> {
     let model = User::find()
         .filter(user::Column::Email.eq(&input.email))
         .one(&state.db)

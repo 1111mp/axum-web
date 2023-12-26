@@ -9,40 +9,40 @@ use sea_orm::{DbErr, SqlErr};
 use serde_json::json;
 
 #[derive(Debug)]
-pub enum CatchedError {
-    CatchedDbError(DbErr),
-    CatchedBcryptError(bcrypt::BcryptError),
-    CatchedJwtError(jsonwebtoken::errors::Error),
+pub enum KnownError {
+    KnownDbError(DbErr),
+    KnownBcryptError(bcrypt::BcryptError),
+    KnownJwtError(jsonwebtoken::errors::Error),
 }
 
 /// This makes it possible to use `?` to automatically convert a `DbErr`
-/// into an `CatchedError`.
-impl From<DbErr> for CatchedError {
+/// into an `KnownError`.
+impl From<DbErr> for KnownError {
     fn from(inner: DbErr) -> Self {
-        CatchedError::CatchedDbError(inner)
+        KnownError::KnownDbError(inner)
     }
 }
 
 /// This makes it possible to use `?` to automatically convert a `bcrypt::BcryptError`
-/// into an `CatchedError`.
-impl From<bcrypt::BcryptError> for CatchedError {
+/// into an `KnownError`.
+impl From<bcrypt::BcryptError> for KnownError {
     fn from(inner: bcrypt::BcryptError) -> Self {
-        CatchedError::CatchedBcryptError(inner)
+        KnownError::KnownBcryptError(inner)
     }
 }
 
 /// This makes it possible to use `?` to automatically convert a `jsonwebtoken::errors::Error`
-/// into an `CatchedError`.
-impl From<jsonwebtoken::errors::Error> for CatchedError {
+/// into an `KnownError`.
+impl From<jsonwebtoken::errors::Error> for KnownError {
     fn from(inner: jsonwebtoken::errors::Error) -> Self {
-        CatchedError::CatchedJwtError(inner)
+        KnownError::KnownJwtError(inner)
     }
 }
 
-impl IntoResponse for CatchedError {
+impl IntoResponse for KnownError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            CatchedError::CatchedDbError(db_err) => match db_err.sql_err() {
+            KnownError::KnownDbError(db_err) => match db_err.sql_err() {
                 Some(SqlErr::UniqueConstraintViolation(message)) => {
                     (StatusCode::INTERNAL_SERVER_ERROR, message)
                 }
@@ -52,11 +52,11 @@ impl IntoResponse for CatchedError {
                     "Unknow Database Error".to_string(),
                 ),
             },
-            CatchedError::CatchedBcryptError(_) => (
+            KnownError::KnownBcryptError(_) => (
                 StatusCode::UNAUTHORIZED,
                 "Invalid email or password".to_string(),
             ),
-            CatchedError::CatchedJwtError(jwt_err) => {
+            KnownError::KnownJwtError(jwt_err) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, jwt_err.to_string())
             }
         };
