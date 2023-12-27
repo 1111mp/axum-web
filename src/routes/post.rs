@@ -18,7 +18,7 @@ use crate::{
 use super::AppState;
 
 pub fn create_route() -> Router<AppState> {
-    Router::new().nest("/post", make_api())
+    Router::new().nest("/v1/post", make_api())
 }
 
 fn make_api() -> Router<AppState> {

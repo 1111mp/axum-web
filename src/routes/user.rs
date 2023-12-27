@@ -11,7 +11,6 @@ use bcrypt::verify;
 use entity::{prelude::User, user};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::Deserialize;
-use serde_json::json;
 use tower_cookies::{Cookie, Cookies};
 use validator::Validate;
 
@@ -22,7 +21,7 @@ use crate::utils::{
 use super::AppState;
 
 pub fn create_route() -> Router<AppState> {
-    Router::new().nest("/user", make_api())
+    Router::new().nest("/v1/user", make_api())
 }
 
 fn make_api() -> Router<AppState> {
@@ -34,9 +33,10 @@ fn make_api() -> Router<AppState> {
 #[debug_handler]
 async fn user_signup(
     State(state): State<AppState>,
+    cookies: Cookies,
     JsonParser(input): JsonParser<CreateUser>,
 ) -> Result<Response, KnownError> {
-    let model = user::ActiveModel {
+    let user = user::ActiveModel {
         name: Set(input.name),
         email: Set(input.email),
         password: Set(input.password),
@@ -45,13 +45,16 @@ async fn user_signup(
     .insert(&state.db)
     .await?;
 
-    let mut json = json!(&model);
-    let user_json = json.as_object_mut().unwrap();
-    user_json.remove("password");
+    let token = jwt_encode(&user)?;
+    let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
+    let mut cookie = Cookie::new(name, token);
+    cookie.set_secure(true);
+    cookie.set_http_only(true);
+    cookies.add(cookie);
 
     Ok(JsonResponse::OK {
         message: "success".to_string(),
-        data: Some(user_json),
+        data: Some(user),
     }
     .into_response())
 }
@@ -92,13 +95,9 @@ async fn user_signin(
     cookie.set_http_only(true);
     cookies.add(cookie);
 
-    let mut json = json!(&user).clone();
-    let user_json = json.as_object_mut().unwrap();
-    user_json.remove("password");
-
     Ok(JsonResponse::OK {
         message: "success".to_string(),
-        data: Some(user_json),
+        data: Some(user),
     }
     .into_response())
 }

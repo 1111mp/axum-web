@@ -2,9 +2,9 @@
 
 use bcrypt::hash;
 use sea_orm::{entity::prelude::*, ActiveValue, Set};
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Deserialize)]
 #[sea_orm(table_name = "user")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -16,6 +16,35 @@ pub struct Model {
     pub email: String,
     pub create_at: Option<DateTimeUtc>,
     pub update_at: Option<DateTimeUtc>,
+}
+
+impl Serialize for Model {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("Model", 5)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("name", &self.name)?;
+        state.serialize_field("email", &self.email)?;
+        state.serialize_field(
+            "create_at",
+            &(if let Some(create_at) = &self.create_at {
+                Some(create_at.format("%Y-%m-%d %H:%M:%S").to_string())
+            } else {
+                None
+            }),
+        )?;
+        state.serialize_field(
+            "update_at",
+            &(if let Some(update_at) = &self.update_at {
+                Some(update_at.format("%Y-%m-%d %H:%M:%S").to_string())
+            } else {
+                None
+            }),
+        )?;
+        state.end()
+    }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
