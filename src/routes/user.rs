@@ -1,3 +1,27 @@
+/**
+ * ! https://docs.rs/axum/latest/axum/middleware/index.html#ordering
+ * ! The public router and protected router depend on the execution order of middleware
+ *
+ * ! .merge(routes::user::create_protected_route())
+ * ! .route_layer(middleware::from_fn(middlewares::cookie_auth::cookie_guard))
+ * ! .merge(routes::user::create_public_route()),
+ *
+ * !             requests
+ * !                |
+ * !                v
+ * !  +-------- public_route -------+
+ * !  | +------ cookie_auth ------+ |
+ * !  | | +-- protected_route --+ | |
+ * !  | | |                     | | |
+ * !  | | |       handler       | | |
+ * !  | | |                     | | |
+ * !  | | +-- protected_route --+ | |
+ * !  | +------ cookie_auth ------+ |
+ * !  +-------- public_route -------+
+ * !                |
+ * !                v
+ * !            responses
+ */
 use std::env;
 
 use axum::{
@@ -15,19 +39,30 @@ use tower_cookies::{Cookie, Cookies};
 use validator::Validate;
 
 use crate::utils::{
-    exception::KnownError, extractor::JsonParser, http_resp::JsonResponse, jwt::jwt_encode,
+    exception::KnownError,
+    extractor::{JsonParser, QueryParser},
+    http_resp::JsonResponse,
+    jwt::jwt_encode,
 };
 
 use super::AppState;
 
-pub fn create_route() -> Router<AppState> {
-    Router::new().nest("/v1/user", make_api())
+pub fn create_public_route() -> Router<AppState> {
+    Router::new().nest("/v1/user", make_public_api())
 }
 
-fn make_api() -> Router<AppState> {
+pub fn create_protected_route() -> Router<AppState> {
+    Router::new().nest("/v1/user", make_protected_api())
+}
+
+fn make_public_api() -> Router<AppState> {
     Router::new()
         .route("/signup", post(user_signup))
         .route("/signin", post(user_signin))
+}
+
+fn make_protected_api() -> Router<AppState> {
+    Router::new().route("/signout", post(user_signout))
 }
 
 #[debug_handler]
@@ -102,6 +137,24 @@ async fn user_signin(
     .into_response())
 }
 
+#[debug_handler]
+async fn user_signout(
+    cookies: Cookies,
+    QueryParser(input): QueryParser<RedirectParam>,
+) -> Result<Response, KnownError> {
+    let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
+    let cookie = Cookie::from(name);
+    cookies.remove(cookie);
+
+    let uri = if let Some(uri) = input.uri {
+        uri
+    } else {
+        // default redirect uri
+        "/login".to_string()
+    };
+    Ok(JsonResponse::<()>::RedirectTo { uri }.into_response())
+}
+
 #[derive(Debug, Deserialize, Validate)]
 struct CreateUser {
     #[validate(length(min = 1, message = "Invalid name"))]
@@ -118,4 +171,9 @@ struct LoginUser {
     email: String,
     #[validate(length(min = 8, message = "Invalid password"))]
     password: String,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+struct RedirectParam {
+    uri: Option<String>,
 }

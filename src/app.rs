@@ -40,8 +40,9 @@ pub async fn start() -> anyhow::Result<()> {
             "/api",
             Router::new()
                 .merge(routes::post::create_route())
+                .merge(routes::user::create_protected_route())
                 .route_layer(middleware::from_fn(middlewares::cookie_auth::cookie_guard))
-                .merge(routes::user::create_route()),
+                .merge(routes::user::create_public_route()),
         )
         .layer(
             ServiceBuilder::new()

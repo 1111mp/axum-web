@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{de::DeserializeOwned, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 use thiserror::Error;
 use validator::Validate;
 
@@ -110,7 +110,7 @@ impl IntoResponse for ParserError {
             }
             ParserError::AxumJsonRejection(rejection) => {
                 let status = rejection.status();
-                let payload: Value = json!({
+                let payload = json!({
                     "code": status.as_u16(),
                     "message": rejection.body_text(),
                 });
@@ -208,7 +208,7 @@ impl IntoResponse for ParserError {
             }
             ParserError::AxumQueryRejection(rejection) => {
                 let status = rejection.status();
-                let payload: Value = json!({
+                let payload = json!({
                     "code": status.as_u16(),
                     "message": rejection.body_text(),
                 });

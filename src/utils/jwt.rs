@@ -19,7 +19,7 @@ pub struct Claims {
 
 pub fn jwt_encode(user: &user::Model) -> Result<String, Error> {
     let now = Utc::now();
-    let expire: chrono::prelude::DateTime<Utc> = now + Duration::days(1);
+    let expire = now + Duration::days(1);
     let claims = Claims {
         id: user.id,
         name: user.name.clone(),
