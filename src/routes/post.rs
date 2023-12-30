@@ -5,8 +5,8 @@ use axum::{
     Extension, Router,
 };
 use axum_macros::debug_handler;
-use entity::prelude::Post;
-use sea_orm::EntityTrait;
+use entity::{post, prelude::Post};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
 use validator::Validate;
 
@@ -22,13 +22,32 @@ pub fn create_route() -> Router<AppState> {
 }
 
 fn make_api() -> Router<AppState> {
-    Router::new().route("/:id", get(get_one))
+    Router::new()
+        .route("/", get(get_all))
+        .route("/:id", get(get_one))
 }
 
 #[derive(Debug, Deserialize, Validate)]
 struct PostParam {
     #[validate(range(min = 1, message = "Invalid id"))]
     id: i32,
+}
+
+#[debug_handler]
+async fn get_all(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<Response, KnownError> {
+    let posts = Post::find()
+        .filter(post::Column::UserId.eq(current_user.id))
+        .all(&state.db)
+        .await?;
+
+    Ok(JsonResponse::OK {
+        message: "successed".to_string(),
+        data: Some(posts),
+    }
+    .into_response())
 }
 
 #[debug_handler]

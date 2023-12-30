@@ -27,20 +27,19 @@ use std::env;
 use axum::{
     extract::State,
     response::{IntoResponse, Response},
-    routing::post,
-    Router,
+    routing, Router,
 };
 use axum_macros::debug_handler;
 use bcrypt::verify;
-use entity::{prelude::User, user};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use entity::{post, prelude::Post, prelude::User, user};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde::Deserialize;
 use tower_cookies::{Cookie, Cookies};
 use validator::Validate;
 
 use crate::utils::{
     exception::KnownError,
-    extractor::{JsonParser, QueryParser},
+    extractor::{JsonParser, PathParser, QueryParser},
     http_resp::JsonResponse,
     jwt::jwt_encode,
 };
@@ -57,16 +56,18 @@ pub fn create_protected_route() -> Router<AppState> {
 
 fn make_public_api() -> Router<AppState> {
     Router::new()
-        .route("/signup", post(user_signup))
-        .route("/signin", post(user_signin))
+        .route("/", routing::post(create_one))
+        .route("/signin", routing::post(user_signin))
 }
 
 fn make_protected_api() -> Router<AppState> {
-    Router::new().route("/signout", post(user_signout))
+    Router::new()
+        .route("/:id", routing::delete(delete_one))
+        .route("/signout", routing::post(user_signout))
 }
 
 #[debug_handler]
-async fn user_signup(
+async fn create_one(
     State(state): State<AppState>,
     cookies: Cookies,
     JsonParser(input): JsonParser<CreateUser>,
@@ -100,12 +101,12 @@ async fn user_signin(
     cookies: Cookies,
     JsonParser(input): JsonParser<LoginUser>,
 ) -> Result<Response, KnownError> {
-    let model = User::find()
+    let user = User::find()
         .filter(user::Column::Email.eq(&input.email))
         .one(&state.db)
         .await?;
 
-    let user = if let Some(user) = model {
+    let user = if let Some(user) = user {
         user
     } else {
         return Ok(JsonResponse::<()>::NotFound {
@@ -155,6 +156,45 @@ async fn user_signout(
     Ok(JsonResponse::<()>::RedirectTo { uri }.into_response())
 }
 
+#[debug_handler]
+async fn delete_one(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    PathParser(input): PathParser<DeleteUser>,
+) -> Result<Response, KnownError> {
+    let thoroughly = if let Some(thoroughly) = input.thoroughly {
+        thoroughly
+    } else {
+        // default value is false
+        false
+    };
+
+    let txn = state.db.begin().await?;
+
+    User::delete_by_id(input.id).exec(&txn).await?;
+
+    if thoroughly {
+        // All information under this user needs to be deleted
+        // delete posts
+        Post::delete_many()
+            .filter(post::Column::UserId.eq(input.id))
+            .exec(&txn)
+            .await?;
+    }
+
+    txn.commit().await?;
+
+    let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
+    let cookie = Cookie::from(name);
+    cookies.remove(cookie);
+
+    Ok(JsonResponse::<()>::OK {
+        message: format!("The user {} has been successfully deleted", input.id),
+        data: None,
+    }
+    .into_response())
+}
+
 #[derive(Debug, Deserialize, Validate)]
 struct CreateUser {
     #[validate(length(min = 1, message = "Invalid name"))]
@@ -171,6 +211,13 @@ struct LoginUser {
     email: String,
     #[validate(length(min = 8, message = "Invalid password"))]
     password: String,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+struct DeleteUser {
+    #[validate(range(min = 1, message = "Invalid id"))]
+    id: i32,
+    thoroughly: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Validate)]

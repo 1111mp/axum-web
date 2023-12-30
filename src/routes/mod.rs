@@ -1,6 +1,7 @@
 use sea_orm::DatabaseConnection;
 
 pub mod post;
+pub mod upload;
 pub mod user;
 
 #[derive(Clone)]

@@ -41,6 +41,7 @@ pub async fn start() -> anyhow::Result<()> {
             Router::new()
                 .merge(routes::post::create_route())
                 .merge(routes::user::create_protected_route())
+                .merge(routes::upload::create_route())
                 .route_layer(middleware::from_fn(middlewares::cookie_auth::cookie_guard))
                 .merge(routes::user::create_public_route()),
         )
