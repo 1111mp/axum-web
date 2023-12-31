@@ -35,3 +35,5 @@ validator = { version = "0.15", features = ["derive"] }
 thiserror = "1.0.51"
 anyhow = "1.0.76"
 futures = "0.3.30"
+utoipa = { version = "4.1.0", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "5.0.0", features = ["axum"] }

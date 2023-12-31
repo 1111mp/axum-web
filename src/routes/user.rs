@@ -35,6 +35,7 @@ use entity::{post, prelude::Post, prelude::User, user};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde::Deserialize;
 use tower_cookies::{Cookie, Cookies};
+use utoipa::ToSchema;
 use validator::Validate;
 
 use crate::utils::{
@@ -66,8 +67,20 @@ fn make_protected_api() -> Router<AppState> {
         .route("/signout", routing::post(user_signout))
 }
 
+/// Create new User
+///
+/// Tries to create a new User or fails with 409 conflict if already exists.
+#[utoipa::path(
+    post,
+    path = "/api/v1/user",
+    request_body = CreateUser,
+    responses(
+        (status = 200, description = "User created successfully", body = RespForUser),
+        (status = 409, description = "User already exists", body = RespError),
+    )
+)]
 #[debug_handler]
-async fn create_one(
+pub(crate) async fn create_one(
     State(state): State<AppState>,
     cookies: Cookies,
     JsonParser(input): JsonParser<CreateUser>,
@@ -95,8 +108,20 @@ async fn create_one(
     .into_response())
 }
 
+/// User Login
+///
+/// If successful, identity credentials are returned
+#[utoipa::path(
+    post,
+    path = "/api/v1/user/signin",
+    request_body = LoginUser,
+    responses(
+        (status = 200, description = "User created successfully", headers(("Set-Cookie" = String, description = "identity credentials")), body = RespForUser),
+        (status = 400, description = "User not found", body = RespError),
+    )
+)]
 #[debug_handler]
-async fn user_signin(
+pub(crate) async fn user_signin(
     State(state): State<AppState>,
     cookies: Cookies,
     JsonParser(input): JsonParser<LoginUser>,
@@ -138,10 +163,25 @@ async fn user_signin(
     .into_response())
 }
 
+/// User Logout
+///
+/// User logout
+#[utoipa::path(
+    post,
+    path = "/api/v1/user/signout",
+    request_body = Option<RedirectParam>,
+    responses(
+        (status = 200, description = "User logout successfully", body = RespError),
+        (status = 401, description = "Unauthorized to logout", body = RespError),
+    ),
+    security(
+        ("app_auth_key" = [])
+    )
+)]
 #[debug_handler]
 async fn user_signout(
     cookies: Cookies,
-    QueryParser(input): QueryParser<RedirectParam>,
+    JsonParser(input): JsonParser<RedirectParam>,
 ) -> Result<Response, KnownError> {
     let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
     let cookie = Cookie::from(name);
@@ -156,13 +196,33 @@ async fn user_signout(
     Ok(JsonResponse::<()>::RedirectTo { uri }.into_response())
 }
 
+/// Delete User by id
+///
+/// Delete User by id. Returns either 200 success of 404 with RespError if User is not found.
+#[utoipa::path(
+        delete,
+        path = "/api/v1/user/{id}",
+        responses(
+            (status = 200, description = "User delete done successfully", body = RespError),
+            (status = 401, description = "Unauthorized to delete User", body = RespError),
+            (status = 404, description = "User not found", body = RespError)
+        ),
+        params(
+            ("id" = i32, Path, description = "User database id"),
+            ("thoroughly" = Option<bool>, Query, description = "Whether to completely delete all user related information, default value is false")
+        ),
+        security(
+            ("app_auth_key" = [])
+        )
+    )]
 #[debug_handler]
-async fn delete_one(
+pub(crate) async fn delete_one(
     State(state): State<AppState>,
     cookies: Cookies,
     PathParser(input): PathParser<DeleteUser>,
+    QueryParser(opt): QueryParser<DeleteUserOpt>,
 ) -> Result<Response, KnownError> {
-    let thoroughly = if let Some(thoroughly) = input.thoroughly {
+    let thoroughly = if let Some(thoroughly) = opt.thoroughly {
         thoroughly
     } else {
         // default value is false
@@ -195,8 +255,9 @@ async fn delete_one(
     .into_response())
 }
 
-#[derive(Debug, Deserialize, Validate)]
-struct CreateUser {
+/// Item create user.
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+pub(crate) struct CreateUser {
     #[validate(length(min = 1, message = "Invalid name"))]
     name: String,
     #[validate(email(message = "Invalid email"))]
@@ -205,22 +266,46 @@ struct CreateUser {
     password: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-struct LoginUser {
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+pub(crate) struct LoginUser {
     #[validate(email(message = "Invalid email"))]
     email: String,
     #[validate(length(min = 8, message = "Invalid password"))]
     password: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-struct DeleteUser {
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+pub(crate) struct DeleteUser {
     #[validate(range(min = 1, message = "Invalid id"))]
     id: i32,
+}
+
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+pub(crate) struct DeleteUserOpt {
     thoroughly: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-struct RedirectParam {
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+pub(crate) struct RedirectParam {
     uri: Option<String>,
+}
+
+/**
+ * ! schema for swagger
+ */
+#[derive(ToSchema)]
+pub(crate) struct RespForUser {
+    pub code: i32,
+    pub message: String,
+    pub data: UserInfo,
+}
+
+#[derive(ToSchema)]
+pub(crate) struct UserInfo {
+    pub id: i32,
+    pub name: String,
+    pub email: String,
+    pub token: String,
+    pub create_at: String,
+    pub update_at: String,
 }

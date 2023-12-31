@@ -8,6 +8,7 @@ use axum_macros::debug_handler;
 use entity::{post, prelude::Post};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
+use utoipa::ToSchema;
 use validator::Validate;
 
 use crate::{
@@ -33,6 +34,19 @@ struct PostParam {
     id: i32,
 }
 
+/// List all Post items
+///
+/// List all Post items from database storage.
+#[utoipa::path(
+        get,
+        path = "/api/v1/post",
+        responses(
+            (status = 200, description = "List all posts successfully", body = RespForPosts)
+        ),
+        security(
+            ("app_auth_key" = [])
+        )
+    )]
 #[debug_handler]
 async fn get_all(
     State(state): State<AppState>,
@@ -50,6 +64,22 @@ async fn get_all(
     .into_response())
 }
 
+/// Get Post items
+///
+/// Get Post details from database storage.
+#[utoipa::path(
+    get,
+    path = "/api/v1/post/{id}",
+    responses(
+        (status = 200, description = "Get Post details successfully", body = RespForPost)
+    ),
+    params(
+        ("id" = i32, Path, description = "Post database id"),
+    ),
+    security(
+        ("app_auth_key" = [])
+    )
+)]
 #[debug_handler]
 async fn get_one(
     State(state): State<AppState>,
@@ -71,4 +101,33 @@ async fn get_one(
         }
         .into_response()),
     }
+}
+
+/**
+ * ! schema for swagger
+ */
+#[derive(ToSchema)]
+pub(crate) struct RespForPost {
+    pub code: i32,
+    pub message: String,
+    pub data: PostInfo,
+}
+
+#[derive(ToSchema)]
+pub(crate) struct RespForPosts {
+    pub code: i32,
+    pub message: String,
+    pub data: Vec<PostInfo>,
+}
+
+#[derive(ToSchema)]
+pub(crate) struct PostInfo {
+    pub id: i32,
+    pub user_id: i32,
+    pub title: String,
+    pub text: String,
+    #[schema(default = "Feed")]
+    pub category: String,
+    pub create_at: String,
+    pub update_at: String,
 }

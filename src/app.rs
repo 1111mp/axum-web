@@ -9,10 +9,13 @@ use sea_orm::Database;
 use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::CorsLayer;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     middlewares,
     routes::{self, AppState},
+    swagger::ApiDoc,
 };
 
 #[tokio::main]
@@ -36,6 +39,7 @@ pub async fn start() -> anyhow::Result<()> {
 
     // build our application with a single route
     let app = Router::new()
+        .merge(SwaggerUi::new("/api/docs").url("/api/docs/openapi.json", ApiDoc::openapi()))
         .nest(
             "/api",
             Router::new()

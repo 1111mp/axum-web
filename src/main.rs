@@ -2,6 +2,7 @@ mod app;
 mod routes;
 mod middlewares;
 mod utils;
+mod swagger;
 
 fn main() {
     let result = app::start();

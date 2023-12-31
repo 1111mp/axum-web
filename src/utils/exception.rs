@@ -43,9 +43,7 @@ impl IntoResponse for KnownError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             KnownError::KnownDbError(db_err) => match db_err.sql_err() {
-                Some(SqlErr::UniqueConstraintViolation(message)) => {
-                    (StatusCode::INTERNAL_SERVER_ERROR, message)
-                }
+                Some(SqlErr::UniqueConstraintViolation(message)) => (StatusCode::CONFLICT, message),
                 Some(sql_err) => (StatusCode::INTERNAL_SERVER_ERROR, sql_err.to_string()),
                 None => (
                     StatusCode::INTERNAL_SERVER_ERROR,

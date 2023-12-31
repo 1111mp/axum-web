@@ -21,6 +21,8 @@ pub async fn cookie_guard(mut req: Request, next: Next) -> Result<Response, Json
         });
     };
 
+    println!("{}", cookies);
+
     let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
     let token = if let Some(token) = get_cookie_value(cookies, name.as_str()) {
         token
