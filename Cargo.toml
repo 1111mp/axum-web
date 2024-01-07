@@ -37,3 +37,4 @@ anyhow = "1.0.76"
 futures = "0.3.30"
 utoipa = { version = "4.1.0", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "5.0.0", features = ["axum"] }
+redis = { version = "0.24.0", features = ["connection-manager", "tokio-comp"] }

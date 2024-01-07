@@ -58,7 +58,7 @@ pub fn create_protected_route() -> Router<AppState> {
 fn make_public_api() -> Router<AppState> {
     Router::new()
         .route("/", routing::post(create_one))
-        .route("/signin", routing::post(user_signin))
+        .route("/login", routing::post(user_login))
 }
 
 fn make_protected_api() -> Router<AppState> {
@@ -113,7 +113,7 @@ pub(crate) async fn create_one(
 /// If successful, identity credentials are returned
 #[utoipa::path(
     post,
-    path = "/api/v1/user/signin",
+    path = "/api/v1/user/login",
     request_body = LoginUser,
     responses(
         (status = 200, description = "User created successfully", headers(("Set-Cookie" = String, description = "identity credentials")), body = RespForUser),
@@ -121,7 +121,7 @@ pub(crate) async fn create_one(
     )
 )]
 #[debug_handler]
-pub(crate) async fn user_signin(
+pub(crate) async fn user_login(
     State(state): State<AppState>,
     cookies: Cookies,
     JsonParser(input): JsonParser<LoginUser>,

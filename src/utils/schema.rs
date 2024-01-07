@@ -1,4 +1,3 @@
-use migration::schema;
 use utoipa::ToSchema;
 
 #[derive(ToSchema)]

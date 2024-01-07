@@ -10,16 +10,17 @@ use utoipa::{
 #[derive(OpenApi)]
 #[openapi(
     servers(
-        (url = "http://127.0.0.1:3000", description = "Local server")
+        (url = "http://127.0.0.1:3000", description = "Local dev server")
     ),
     paths(
-        User::create_one, User::delete_one, User::user_signin, User::user_signout,
+        User::create_one, User::delete_one, User::user_login, User::user_signout,
         Post::get_all, Post::get_one
     ),
     components(
         schemas(
-            Schema::RespError, Post::RespForPost, Post::RespForPosts, Post::PostInfo,
+            Schema::RespError,
             User::RespForUser, User::UserInfo, User::CreateUser, User::DeleteUser, User::DeleteUserOpt, User::LoginUser, User::RedirectParam,
+            Post::RespForPost, Post::RespForPosts, Post::PostInfo,
         )
     ),
     modifiers(&SecurityAddon),

@@ -25,17 +25,23 @@ pub async fn start() -> anyhow::Result<()> {
 
     dotenvy::dotenv().ok();
     let db_url = env::var("DATABASE_URL").expect("DATABASE_URL is not set in .env file");
+    let redis_url = env::var("REDIS_URL").expect("REDIS_URL is not set in .env file");
     let host = env::var("HOST").unwrap_or("127.0.0.1".to_string());
     let port = env::var("PORT").unwrap_or("3000".to_string());
     let server_url = format!("{host}:{port}");
 
+    // database
     let db = Database::connect(db_url).await?;
     // Apply all pending migrations
     Migrator::up(&db, None).await?;
     // Drop all tables from the database, then reapply all migrations
     // Migrator::fresh(&db).await?;
 
-    let state = AppState { db };
+    // redis
+    let client = redis::Client::open(redis_url)?;
+    let redis = client.get_connection_manager().await?;
+
+    let state = AppState { db, redis };
 
     // build our application with a single route
     let app = Router::new()

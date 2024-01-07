@@ -13,6 +13,7 @@ pub enum KnownError {
     KnownDbError(DbErr),
     KnownBcryptError(bcrypt::BcryptError),
     KnownJwtError(jsonwebtoken::errors::Error),
+    KnownRedisError(redis::RedisError),
 }
 
 /// This makes it possible to use `?` to automatically convert a `DbErr`
@@ -39,6 +40,14 @@ impl From<jsonwebtoken::errors::Error> for KnownError {
     }
 }
 
+/// This makes it possible to use `?` to automatically convert a `redis::RedisError`
+/// into an `KnownError`.
+impl From<redis::RedisError> for KnownError {
+    fn from(inner: redis::RedisError) -> Self {
+        KnownError::KnownRedisError(inner)
+    }
+}
+
 impl IntoResponse for KnownError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
@@ -57,6 +66,10 @@ impl IntoResponse for KnownError {
             KnownError::KnownJwtError(jwt_err) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, jwt_err.to_string())
             }
+            KnownError::KnownRedisError(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[redis]: {}", error.to_string()),
+            ),
         };
 
         (

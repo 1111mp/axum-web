@@ -1,10 +1,23 @@
-use axum::{extract::Request, http::header, middleware::Next, response::Response};
+use axum::{
+    extract::{Request, State},
+    http::header,
+    middleware::Next,
+    response::Response,
+};
 
-use crate::utils::http_resp::JsonResponse;
+use crate::{routes::AppState, utils::http_resp::JsonResponse};
 
 use super::current_user::authorize_current_user;
 
-pub async fn auth_guard(mut req: Request, next: Next) -> Result<Response, JsonResponse<()>> {
+// usage: https://docs.rs/axum/latest/axum/middleware/fn.from_fn_with_state.html
+pub async fn auth_guard(
+    State(state): State<AppState>,
+    // you can add more extractors here but the last
+    // extractor must implement `FromRequest` which
+    // `Request` does
+    mut req: Request,
+    next: Next,
+) -> Result<Response, JsonResponse<()>> {
     let token = req
         .headers()
         .get(header::AUTHORIZATION)
