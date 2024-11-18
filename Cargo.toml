@@ -1,0 +1,45 @@
+[package]
+name = "axum-web"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+members = [".", "entity", "migration"]
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.7", features = ["multipart"] }
+axum-extra = { version = "0.9", features = ["typed-header"] }
+axum-macros = "0.4"
+bb8 = "0.8"
+bb8-redis = "0.17"
+bcrypt = "0.15"
+chrono = "0.4"
+dotenvy = "0.15"
+entity = { path = "entity" }
+futures = "0.3"
+jsonwebtoken = "9"
+migration = { path = "migration" }
+redis = { version = "0.27", features = ["connection-manager", "tokio-comp"] }
+sea-orm = { version = "1", features = [
+	"debug-print",
+	"sqlx-mysql",
+	"runtime-tokio-native-tls",
+	"macros",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-cookies = "0.10"
+tokio-util = { version = "0.7", features = ["io"] }
+tower-http = { version = "0.6", features = ["cors", "request-id", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = [] }
+utoipa = { version = "5", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "8", features = ["axum"] }
+uuid = { version = "1", features = ["v4", "fast-rng", "macro-diagnostics"] }
+validator = { version = "0.19", features = ["derive"] }
