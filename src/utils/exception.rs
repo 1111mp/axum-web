@@ -5,9 +5,8 @@ use std::io;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
-use sea_orm::{sqlx::error, SqlErr};
+use sea_orm::SqlErr;
 use serde_json::json;
 use thiserror::Error;
 

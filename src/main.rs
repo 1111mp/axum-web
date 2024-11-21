@@ -1,4 +1,5 @@
 mod app;
+mod dtos;
 mod extensions;
 mod guards;
 mod routes;

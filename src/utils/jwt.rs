@@ -35,8 +35,8 @@ pub fn jwt_encode(user: &user::Model) -> Result<String, Error> {
             id: user.id,
             name: user.name.clone(),
             email: user.email.clone(),
-            create_at: user.create_at,
-            update_at: user.update_at,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
         },
     };
 

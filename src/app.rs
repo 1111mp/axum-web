@@ -1,13 +1,10 @@
-use crate::{
-    guards,
-    routes::{self, AppState},
-    swagger::ApiDoc,
-};
+use crate::{routes, swagger::ApiDoc};
 
 use axum::{
     http::{header, HeaderName, Method, Request},
-    middleware, Router,
+    Router,
 };
+use bb8::Pool;
 use bb8_redis::RedisConnectionManager;
 use migration::{Migrator, MigratorTrait};
 use sea_orm::Database;
@@ -54,16 +51,7 @@ pub async fn start() -> anyhow::Result<()> {
     let state = AppState { db, redis_pool };
     // build our application with a single route
     let app = Router::new()
-        .merge(SwaggerUi::new("/api/docs").url("/api/docs/openapi.json", ApiDoc::openapi()))
-        .nest(
-            "/api",
-            Router::new()
-                .merge(routes::post::create_route())
-                .merge(routes::user::create_protected_route())
-                .merge(routes::upload::create_route())
-                .route_layer(middleware::from_fn(guards::cookie_guard::cookie_guard))
-                .merge(routes::user::create_public_route()),
-        )
+        .nest("/", routes::build())
         .layer(
             ServiceBuilder::new()
                 .layer(SetRequestIdLayer::new(
@@ -118,6 +106,9 @@ pub async fn start() -> anyhow::Result<()> {
                 )
                 .max_age(Duration::from_secs(3600)),
         )
+        // swagger ui
+        .merge(SwaggerUi::new("/api/docs").url("/api/docs/openapi.json", ApiDoc::openapi()))
+        // .fallback(routes::fallback)
         .with_state(state);
 
     // run our app with hyper, listening globally on port 3000
@@ -126,4 +117,10 @@ pub async fn start() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    pub db: sea_orm::DatabaseConnection,
+    pub redis_pool: Pool<RedisConnectionManager>,
 }

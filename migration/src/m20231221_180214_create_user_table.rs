@@ -22,12 +22,12 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(User::Password).string().not_null())
                     .col(ColumnDef::new(User::Email).string().not_null().unique_key())
                     .col(
-                        ColumnDef::new(User::CreateAt)
+                        ColumnDef::new(User::CreatedAt)
                             .timestamp_with_time_zone()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
-                        ColumnDef::new(User::UpdateAt)
+                        ColumnDef::new(User::UpdatedAt)
                             .timestamp_with_time_zone()
                             .default(Expr::current_timestamp()),
                     )
@@ -65,8 +65,8 @@ pub enum User {
     Name,
     Password,
     Email,
-    #[sea_orm(column_name = "create_at")]
-    CreateAt,
-    #[sea_orm(column_name = "update_at")]
-    UpdateAt,
+    #[sea_orm(column_name = "created_at")]
+    CreatedAt,
+    #[sea_orm(column_name = "updated_at")]
+    UpdatedAt,
 }

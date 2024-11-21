@@ -28,12 +28,12 @@ impl MigrationTrait for Migration {
                             .default("Story"),
                     )
                     .col(
-                        ColumnDef::new(Post::CreateAt)
+                        ColumnDef::new(Post::CreatedAt)
                             .timestamp_with_time_zone()
                             .default(Expr::current_timestamp()),
                     )
                     .col(
-                        ColumnDef::new(Post::UpdateAt)
+                        ColumnDef::new(Post::UpdatedAt)
                             .timestamp_with_time_zone()
                             .default(Expr::current_timestamp()),
                     )
@@ -95,10 +95,10 @@ enum Post {
     Text,
     Category,
     UserId,
-    #[sea_orm(column_name = "create_at")]
-    CreateAt,
-    #[sea_orm(column_name = "update_at")]
-    UpdateAt,
+    #[sea_orm(column_name = "created_at")]
+    CreatedAt,
+    #[sea_orm(column_name = "updated_at")]
+    UpdatedAt,
 }
 
 #[derive(Iden, EnumIter)]

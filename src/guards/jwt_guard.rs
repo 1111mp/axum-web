@@ -1,6 +1,6 @@
-// use super::current_user::authorize_current_user;
+use super::APP_AUTH_KEY;
 use crate::{
-    routes::AppState,
+    app::AppState,
     utils::{exception::HttpException, jwt::jwt_decode},
 };
 
@@ -12,7 +12,6 @@ use axum::{
     response::Response,
 };
 use redis::AsyncCommands;
-use std::env;
 
 // usage: https://docs.rs/axum/latest/axum/middleware/fn.from_fn_with_state.html
 pub async fn jwt_guard(
@@ -32,8 +31,7 @@ pub async fn jwt_guard(
         .get(header::AUTHORIZATION)
         .and_then(|token_key| token_key.to_str().ok())
         .ok_or_else(|| HttpException::UnauthorizedException(None))?;
-    let app_auth_key = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
-    let key = format!("{app_auth_key}_{user_id}");
+    let key = format!("{}_{user_id}", APP_AUTH_KEY.as_str());
     let mut connect = state.redis_pool.get().await?;
     let token_value: String = connect.hget(&key, token_key).await?;
     let claims =

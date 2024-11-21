@@ -1,80 +1,92 @@
-use super::AppState;
-
 use crate::{
-    http_exception,
+    app::AppState,
     utils::{exception::HttpException, http_resp::HttpResponse},
 };
 
-use axum::{body::Bytes, extract::Multipart, routing, BoxError, Router};
+use axum::{
+    extract::DefaultBodyLimit,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing, Router,
+};
 use axum_macros::debug_handler;
-use futures::{Stream, TryStreamExt};
-use std::io;
-use tokio::{fs::File, io::BufWriter};
-use tokio_util::io::StreamReader;
+use axum_typed_multipart::{BaseMultipart, FieldData, TryFromMultipart, TypedMultipartError};
+use serde::Serialize;
+use std::path::{Path, PathBuf};
+use tempfile::NamedTempFile;
+use utoipa::ToSchema;
 
 const UPLOADS_DIRECTORY: &str = "uploads";
 
-pub fn create_route() -> Router<AppState> {
-    Router::new().nest("/v1/post", make_api())
+pub fn protected_route() -> Router<AppState> {
+    let router = Router::new()
+        .route("/", routing::post(upload_handler))
+        // 200M
+        .layer(DefaultBodyLimit::max(1024 * 1024 * 200));
+
+    Router::new().nest("/upload", router)
 }
 
-fn make_api() -> Router<AppState> {
-    Router::new().route("/", routing::post(upload_handler))
+#[derive(TryFromMultipart, ToSchema)]
+struct FileUpload {
+    /// File's name
+    #[schema(value_type = String)]
+    pub name: String,
+
+    /// File or files to upload
+    #[form_data(limit = "200MiB")]
+    #[schema(value_type = Vec<u8>)]
+    pub file: FieldData<NamedTempFile>,
 }
 
+#[utoipa::path(
+		post,
+		path = "/api/v1/upload",
+		request_body(content_type = "multipart/form-data", content = FileUpload),
+		tag = "Upload"
+)]
 #[debug_handler]
-async fn upload_handler(mut multipart: Multipart) -> Result<HttpResponse<()>, HttpException> {
-    while let Ok(Some(field)) = multipart.next_field().await {
-        let file_name = if let Some(file_name) = field.file_name() {
-            file_name.to_owned()
-        } else {
-            continue;
-        };
-
-        stream_to_file(&file_name, field).await?;
-    }
+async fn upload_handler(
+    input: SelfTypedMultipart<FileUpload>,
+) -> Result<HttpResponse<PathBuf>, HttpException> {
+    let path = Path::new(UPLOADS_DIRECTORY).join(&input.name);
+    input
+        .data
+        .file
+        .contents
+        .persist(&path)
+        .map_err(|err| HttpException::InternalServerErrorException(Some(err.to_string())))?;
 
     Ok(HttpResponse::Json {
         message: None,
-        data: None,
+        data: Some(path),
     })
 }
 
-// Save a `Stream` to a file
-async fn stream_to_file<S, E>(path: &str, stream: S) -> Result<(), HttpException>
-where
-    S: Stream<Item = Result<Bytes, E>>,
-    E: Into<BoxError>,
-{
-    if !path_is_valid(path) {
-        http_exception!(BadRequestException, "Invalid path");
-    }
-
-    // Convert the stream into an `AsyncRead`.
-    let body_with_io_error = stream.map_err(|err| io::Error::new(io::ErrorKind::Other, err));
-    let body_reader = StreamReader::new(body_with_io_error);
-    futures::pin_mut!(body_reader);
-
-    // Create the file. `File` implements `AsyncWrite`.
-    let path = std::path::Path::new(UPLOADS_DIRECTORY).join(path);
-    let mut file = BufWriter::new(File::create(path).await?);
-
-    // Copy the body into the file.
-    tokio::io::copy(&mut body_reader, &mut file).await?;
-    Ok(())
+// Step 1: Define a custom error type.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MultipartException {
+    message: String,
+    status_code: u16,
 }
 
-// to prevent directory traversal attacks we ensure the path consists of exactly one normal
-// component
-fn path_is_valid(path: &str) -> bool {
-    let path = std::path::Path::new(path);
-    let mut components = path.components().peekable();
+// Step 2: Implement `IntoResponse` for the custom error type.
+impl IntoResponse for MultipartException {
+    fn into_response(self) -> Response {
+        (StatusCode::BAD_REQUEST, axum::Json(self)).into_response()
+    }
+}
 
-    if let Some(first) = components.peek() {
-        if !matches!(first, std::path::Component::Normal(_)) {
-            return false;
+// Step 3: Implement `From<TypedMultipartError>` for the custom error type.
+impl From<TypedMultipartError> for MultipartException {
+    fn from(error: TypedMultipartError) -> Self {
+        Self {
+            message: error.to_string(),
+            status_code: error.get_status().into(),
         }
     }
-
-    components.count() == 1
 }
+
+// Step 4: Define a type alias for the multipart request (Optional).
+type SelfTypedMultipart<T> = BaseMultipart<T, MultipartException>;

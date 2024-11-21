@@ -1,69 +1,37 @@
-/**
- * ! https://docs.rs/axum/latest/axum/middleware/index.html#ordering
- * ! The public router and protected router depend on the execution order of middleware
- *
- * ! .merge(routes::user::create_protected_route())
- * ! .route_layer(middleware::from_fn(middlewares::cookie_auth::cookie_guard))
- * ! .merge(routes::user::create_public_route()),
- *
- * !             requests
- * !                |
- * !                v
- * !  +-------- public_route -------+
- * !  | +------ cookie_auth ------+ |
- * !  | | +-- protected_route --+ | |
- * !  | | |                     | | |
- * !  | | |       handler       | | |
- * !  | | |                     | | |
- * !  | | +-- protected_route --+ | |
- * !  | +------ cookie_auth ------+ |
- * !  +-------- public_route -------+
- * !                |
- * !                v
- * !            responses
- */
-use std::env;
-
-use axum::{extract::State, routing, Router};
-use axum_macros::debug_handler;
-use entity::{post, prelude::Post, prelude::User, user};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
-use serde::Deserialize;
-use tower_cookies::{Cookie, Cookies};
-use utoipa::ToSchema;
-use validator::Validate;
-
 use crate::{
+    app::AppState,
+    dtos::user_dtos::{CreateUserDto, DeleteUserDto, DeleteUserParam, LoginUserDto, RedirectParam},
+    guards::APP_AUTH_KEY,
     http_exception, http_exception_or,
+    swagger::{user_schemas::UserSchema, ErrorResponseSchema},
     utils::{
         exception::HttpException,
         extractor::{Body, Param, Query},
         http_resp::HttpResponse,
         jwt::jwt_encode,
-        schema::RespError,
     },
 };
 
-use super::AppState;
+use axum::{extract::State, routing, Router};
+use axum_macros::debug_handler;
+use entity::{post, prelude::Post, prelude::User, user};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
+use tower_cookies::{Cookie, Cookies};
 
-pub fn create_public_route() -> Router<AppState> {
-    Router::new().nest("/v1/user", make_public_api())
-}
-
-pub fn create_protected_route() -> Router<AppState> {
-    Router::new().nest("/v1/user", make_protected_api())
-}
-
-fn make_public_api() -> Router<AppState> {
-    Router::new()
+pub fn public_route() -> Router<AppState> {
+    let router = Router::new()
         .route("/", routing::post(create_one))
-        .route("/login", routing::post(user_login))
+        .route("/login", routing::post(login));
+
+    Router::new().nest("/user", router)
 }
 
-fn make_protected_api() -> Router<AppState> {
-    Router::new()
+pub fn protected_route() -> Router<AppState> {
+    let router = Router::new()
         .route("/:id", routing::delete(delete_one))
-        .route("/signout", routing::post(user_signout))
+        .route("/signout", routing::post(signout));
+
+    Router::new().nest("/user", router)
 }
 
 /// Create new User
@@ -72,17 +40,17 @@ fn make_protected_api() -> Router<AppState> {
 #[utoipa::path(
     post,
     path = "/api/v1/user",
-    request_body = CreateUser,
+    request_body = CreateUserDto,
     responses(
-        (status = 200, description = "User created successfully", body = RespForUser),
-        (status = 409, description = "User already exists", body = RespError),
+        (status = 200, description = "User created successfully", body = UserSchema),
+        (status = 409, description = "User already exists", body = ErrorResponseSchema),
     )
 )]
 #[debug_handler]
 pub(crate) async fn create_one(
     State(state): State<AppState>,
     cookies: Cookies,
-    Body(input): Body<CreateUser>,
+    Body(input): Body<CreateUserDto>,
 ) -> Result<HttpResponse<user::Model>, HttpException> {
     let user = user::ActiveModel {
         name: Set(input.name),
@@ -94,10 +62,10 @@ pub(crate) async fn create_one(
     .await?;
 
     let token = jwt_encode(&user).map_err(|_| HttpException::UnauthorizedException(None))?;
-    let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
-    let mut cookie = Cookie::new(name, token);
-    cookie.set_secure(true);
-    cookie.set_http_only(true);
+    let cookie = Cookie::build((APP_AUTH_KEY.as_str(), token))
+        .secure(true)
+        .http_only(true)
+        .build();
     cookies.add(cookie);
 
     Ok(HttpResponse::Json {
@@ -112,17 +80,17 @@ pub(crate) async fn create_one(
 #[utoipa::path(
     post,
     path = "/api/v1/user/login",
-    request_body = LoginUser,
+    request_body = LoginUserDto,
     responses(
-        (status = 200, description = "User created successfully", headers(("Set-Cookie" = String, description = "identity credentials")), body = RespForUser),
-        (status = 400, description = "User not found", body = RespError),
+        (status = 200, description = "User created successfully", headers(("Set-Cookie" = String, description = "identity credentials")), body = UserSchema),
+        (status = 400, description = "User not found", body = ErrorResponseSchema),
     )
 )]
 #[debug_handler]
-pub(crate) async fn user_login(
+pub(crate) async fn login(
     State(state): State<AppState>,
     cookies: Cookies,
-    Body(input): Body<LoginUser>,
+    Body(input): Body<LoginUserDto>,
 ) -> Result<HttpResponse<user::Model>, HttpException> {
     let user = http_exception_or!(
         User::find()
@@ -140,10 +108,10 @@ pub(crate) async fn user_login(
     }
 
     let token = jwt_encode(&user).map_err(|_| HttpException::UnauthorizedException(None))?;
-    let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
-    let mut cookie = Cookie::new(name, token);
-    cookie.set_secure(true);
-    cookie.set_http_only(true);
+    let cookie = Cookie::build((APP_AUTH_KEY.as_str(), token))
+        .secure(true)
+        .http_only(true)
+        .build();
     cookies.add(cookie);
 
     Ok(HttpResponse::Json {
@@ -160,21 +128,19 @@ pub(crate) async fn user_login(
     path = "/api/v1/user/signout",
     request_body = Option<RedirectParam>,
     responses(
-        (status = 200, description = "User logout successfully", body = RespError),
-        (status = 401, description = "Unauthorized to logout", body = RespError),
+        (status = 200, description = "User logout successfully", body = ErrorResponseSchema),
+        (status = 401, description = "Unauthorized to logout", body = ErrorResponseSchema),
     ),
     security(
         ("app_auth_key" = [])
     )
 )]
 #[debug_handler]
-async fn user_signout(
+async fn signout(
     cookies: Cookies,
     Body(input): Body<RedirectParam>,
 ) -> Result<HttpResponse<()>, HttpException> {
-    let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
-    let cookie = Cookie::from(name);
-    cookies.remove(cookie);
+    cookies.remove(Cookie::from(APP_AUTH_KEY.as_str()));
 
     let uri = input.uri.unwrap_or("/login".to_string());
     Ok(HttpResponse::RedirectTo { uri })
@@ -187,9 +153,9 @@ async fn user_signout(
         delete,
         path = "/api/v1/user/{id}",
         responses(
-            (status = 200, description = "User delete done successfully", body = RespError),
-            (status = 401, description = "Unauthorized to delete User", body = RespError),
-            (status = 404, description = "User not found", body = RespError)
+            (status = 200, description = "User delete done successfully", body = ErrorResponseSchema),
+            (status = 401, description = "Unauthorized to delete User", body = ErrorResponseSchema),
+            (status = 404, description = "User not found", body = ErrorResponseSchema)
         ),
         params(
             ("id" = i32, Path, description = "User database id"),
@@ -203,20 +169,12 @@ async fn user_signout(
 pub(crate) async fn delete_one(
     State(state): State<AppState>,
     cookies: Cookies,
-    Param(input): Param<DeleteUser>,
-    Query(opt): Query<DeleteUserOpt>,
+    Param(input): Param<DeleteUserParam>,
+    Query(dto): Query<DeleteUserDto>,
 ) -> Result<HttpResponse<()>, HttpException> {
-    let thoroughly = if let Some(thoroughly) = opt.thoroughly {
-        thoroughly
-    } else {
-        // default value is false
-        false
-    };
-
+    let thoroughly = dto.thoroughly.unwrap_or(false);
     let txn = state.db.begin().await?;
-
     User::delete_by_id(input.id).exec(&txn).await?;
-
     if thoroughly {
         // All information under this user needs to be deleted
         // delete posts
@@ -225,12 +183,8 @@ pub(crate) async fn delete_one(
             .exec(&txn)
             .await?;
     }
-
     txn.commit().await?;
-
-    let name = env::var("APP_AUTH_KEY").unwrap_or("app_auth_key".to_string());
-    let cookie = Cookie::from(name);
-    cookies.remove(cookie);
+    cookies.remove(Cookie::from(APP_AUTH_KEY.as_str()));
 
     Ok(HttpResponse::Json {
         message: Some(format!(
@@ -239,59 +193,4 @@ pub(crate) async fn delete_one(
         )),
         data: None,
     })
-}
-
-/// Item create user.
-#[derive(Debug, Deserialize, Validate, ToSchema)]
-pub(crate) struct CreateUser {
-    #[validate(length(min = 1, message = "Invalid name"))]
-    name: String,
-    #[validate(email(message = "Invalid email"))]
-    email: String,
-    #[validate(length(min = 8, message = "Invalid password"))]
-    password: String,
-}
-
-#[derive(Debug, Deserialize, Validate, ToSchema)]
-pub(crate) struct LoginUser {
-    #[validate(email(message = "Invalid email"))]
-    email: String,
-    #[validate(length(min = 8, message = "Invalid password"))]
-    password: String,
-}
-
-#[derive(Debug, Deserialize, Validate, ToSchema)]
-pub(crate) struct DeleteUser {
-    #[validate(range(min = 1, message = "Invalid id"))]
-    id: i32,
-}
-
-#[derive(Debug, Deserialize, Validate, ToSchema)]
-pub(crate) struct DeleteUserOpt {
-    thoroughly: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Validate, ToSchema)]
-pub(crate) struct RedirectParam {
-    uri: Option<String>,
-}
-
-/**
- * ! schema for swagger
- */
-#[derive(ToSchema)]
-pub(crate) struct RespForUser {
-    pub code: i32,
-    pub message: String,
-    pub data: UserInfo,
-}
-
-#[derive(ToSchema)]
-pub(crate) struct UserInfo {
-    pub id: i32,
-    pub name: String,
-    pub email: String,
-    pub token: String,
-    pub create_at: String,
-    pub update_at: String,
 }
