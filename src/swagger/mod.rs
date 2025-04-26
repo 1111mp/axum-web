@@ -17,22 +17,17 @@ pub mod user_schemas;
     servers(
         (url = "http://127.0.0.1:3000", description = "Local dev server")
     ),
-    paths(
-        User::create_one, User::delete_one, User::login, User::signout,
-        Post::get_all, Post::get_one,
-				Upload::upload_handler
-    ),
     components(
         schemas(
-						post_schemas::PostSchema,
-						user_schemas::UserSchema, user_dtos::CreateUserDto, user_dtos::DeleteUserParam, user_dtos::DeleteUserDto, user_dtos::LoginUserDto, user_dtos::RedirectParam,
-				)
+			post_schemas::PostSchema,
+			user_schemas::UserSchema, user_dtos::CreateUserDto, user_dtos::DeleteUserParam, user_dtos::DeleteUserDto, user_dtos::LoginUserDto, user_dtos::RedirectParam,
+		)
     ),
     modifiers(&SecurityAddon),
     tags(
-        (name = "User", description = "User items management API"),
-        (name = "Post", description = "Post items management API"),
-        (name = "Upload", description = "Upload items management API")
+        (name = "User", description = "User API endpoints"),
+        (name = "Post", description = "Post API endpoints"),
+        (name = "Upload", description = "Upload API endpoints")
     )
 )]
 pub struct ApiDoc;

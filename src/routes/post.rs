@@ -1,23 +1,29 @@
 use crate::{
     app::AppState,
     dtos::post_dtos::QueryPostDto,
-    extensions::user_execution::UserInfo,
+    exception::HttpException,
+    extractors::Param,
+    guards::Claims,
     http_exception_or,
     swagger::{post_schemas::PostSchema, ResponseSchema},
-    utils::{exception::HttpException, extractor::Param, http_resp::HttpResponse},
 };
 
-use axum::{extract::State, routing::get, Extension, Router};
+use std::sync::Arc;
+
+use axum::extract::State;
 use axum_macros::debug_handler;
 use entity::{post, prelude::Post};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn protected_route() -> Router<AppState> {
-    let router = Router::new()
-        .route("/", get(get_all))
-        .route("/:id", get(get_one));
+use super::HttpResponse;
 
-    Router::new().nest("/post", router)
+pub fn protected_route() -> OpenApiRouter<Arc<AppState>> {
+    let router = OpenApiRouter::new()
+        .routes(routes!(get_one))
+        .routes(routes!(get_all));
+
+    OpenApiRouter::new().nest("/post", router)
 }
 
 /// List all Post items
@@ -25,7 +31,7 @@ pub fn protected_route() -> Router<AppState> {
 /// List all Post items from database storage.
 #[utoipa::path(
         get,
-        path = "/api/v1/post",
+        path = "",
         responses(
             (status = 200, description = "List all posts successfully", body = ResponseSchema<Vec<PostSchema>>)
         ),
@@ -35,17 +41,17 @@ pub fn protected_route() -> Router<AppState> {
     )]
 #[debug_handler]
 async fn get_all(
-    State(state): State<AppState>,
-    Extension(user): Extension<UserInfo>,
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
 ) -> Result<HttpResponse<Vec<post::Model>>, HttpException> {
     let posts = Post::find()
-        .filter(post::Column::UserId.eq(user.id))
+        .filter(post::Column::UserId.eq(claims.user_id))
         .all(&state.db)
         .await?;
 
     Ok(HttpResponse::Json {
         message: None,
-        data: Some(posts),
+        payload: Some(posts),
     })
 }
 
@@ -54,7 +60,7 @@ async fn get_all(
 /// Get Post details from database storage.
 #[utoipa::path(
     get,
-    path = "/api/v1/post/{id}",
+    path = "/{id}",
     responses(
         (status = 200, description = "Get Post details successfully", body = PostSchema)
     ),
@@ -67,7 +73,7 @@ async fn get_all(
 )]
 #[debug_handler]
 async fn get_one(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     Param(query): Param<QueryPostDto>,
 ) -> Result<HttpResponse<post::Model>, HttpException> {
     let post = http_exception_or!(
@@ -78,6 +84,6 @@ async fn get_one(
 
     Ok(HttpResponse::Json {
         message: None,
-        data: Some(post),
+        payload: Some(post),
     })
 }

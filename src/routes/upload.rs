@@ -1,30 +1,33 @@
-use crate::{
-    app::AppState,
-    utils::{exception::HttpException, http_resp::HttpResponse},
+use crate::{app::AppState, exception::HttpException};
+
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use axum::{
     extract::DefaultBodyLimit,
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing, Router,
 };
 use axum_macros::debug_handler;
 use axum_typed_multipart::{BaseMultipart, FieldData, TryFromMultipart, TypedMultipartError};
 use serde::Serialize;
-use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
+
+use super::HttpResponse;
 
 const UPLOADS_DIRECTORY: &str = "uploads";
 
-pub fn protected_route() -> Router<AppState> {
-    let router = Router::new()
-        .route("/", routing::post(upload_handler))
+pub fn protected_route() -> OpenApiRouter<Arc<AppState>> {
+    let router = OpenApiRouter::new()
+        .routes(routes!(upload_handler))
         // 200M
         .layer(DefaultBodyLimit::max(1024 * 1024 * 200));
 
-    Router::new().nest("/upload", router)
+    OpenApiRouter::new().nest("/upload", router)
 }
 
 #[derive(TryFromMultipart, ToSchema)]
@@ -41,7 +44,7 @@ struct FileUpload {
 
 #[utoipa::path(
 		post,
-		path = "/api/v1/upload",
+		path = "",
 		request_body(content_type = "multipart/form-data", content = FileUpload),
 		tag = "Upload"
 )]
@@ -59,7 +62,7 @@ async fn upload_handler(
 
     Ok(HttpResponse::Json {
         message: None,
-        data: Some(path),
+        payload: Some(path),
     })
 }
 

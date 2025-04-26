@@ -1,28 +1,41 @@
-use super::APP_AUTH_KEY;
-use crate::utils::{exception::HttpException, jwt::jwt_decode};
+use std::sync::LazyLock;
 
 use anyhow::Result;
-use axum::{extract::Request, http::header, middleware::Next, response::Response};
-use tower_cookies::Cookie;
+use axum::{
+    extract::FromRequestParts,
+    http::{request::Parts, StatusCode},
+};
+use tower_cookies::Cookies;
+use tracing::info;
 
-pub async fn cookie_guard(mut req: Request, next: Next) -> Result<Response, HttpException> {
-    let cookies = req
-        .headers()
-        .get(header::COOKIE)
-        .and_then(|cookies| cookies.to_str().ok())
-        .ok_or_else(|| HttpException::UnauthorizedException(None))?;
-    let token = get_cookie_value(cookies, APP_AUTH_KEY.as_str())
-        .ok_or_else(|| HttpException::UnauthorizedException(None))?;
-    let claims = jwt_decode(&token).map_err(|_| HttpException::UnauthorizedException(None))?;
+pub static APP_AUTH_KEY: LazyLock<String> =
+    LazyLock::new(|| std::env::var("APP_AUTH_KEY").expect("APP_AUTH_KEY must be set"));
 
-    req.extensions_mut().insert(claims);
-    Ok(next.run(req).await)
-}
+pub struct CookieGuard;
 
-/// get cookie value by name
-fn get_cookie_value(cookies: &str, name: &str) -> Option<String> {
-    Cookie::split_parse(cookies)
-        .filter_map(Result::ok)
-        .find(|cookie| cookie.name() == name)
-        .map(|cookie| cookie.value().to_string())
+impl<S> FromRequestParts<S> for CookieGuard
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let cookies = Cookies::from_request_parts(parts, state).await?;
+        let cookie = cookies
+            .get(APP_AUTH_KEY.as_str())
+            .map(|c| c.value().to_string())
+            .ok_or((StatusCode::UNAUTHORIZED, "UnAuthorized"))?;
+
+        info!("cookie: {}", cookie);
+
+        let claims = super::jwt_decode(&cookie).map_err(|err| {
+            info!("err: {}", err.to_string());
+            (StatusCode::UNAUTHORIZED, "UnAuthorized")
+        })?;
+
+        info!("claims: {:?}", claims);
+
+        parts.extensions.insert(claims);
+        Ok(Self)
+    }
 }

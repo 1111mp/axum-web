@@ -23,25 +23,75 @@
  *                 v
  *             responses
  */
-use axum::{http::Uri, middleware, Router};
+use crate::{
+    app::AppState,
+    exception::HttpException,
+    guards::{self, CookieGuard},
+};
 
-use crate::{app::AppState, guards, utils::exception::HttpException};
+use std::sync::Arc;
+
+use axum::{
+    http::{StatusCode, Uri},
+    middleware,
+    response::{IntoResponse, Redirect},
+    Json,
+};
+use serde::Serialize;
+use utoipa_axum::router::OpenApiRouter;
 
 pub mod post;
 pub mod upload;
 pub mod user;
 
-pub fn build() -> Router<AppState> {
-    let api_router = Router::new()
+pub fn router() -> OpenApiRouter<Arc<AppState>> {
+    let api_v1_router = OpenApiRouter::new()
         .merge(user::protected_route())
         .merge(post::protected_route())
-        .route_layer(middleware::from_fn(guards::cookie_guard::cookie_guard))
+        .route_layer(middleware::from_extractor::<CookieGuard>())
         .merge(upload::protected_route())
         .merge(user::public_route());
 
-    Router::new().nest("/api/v1", api_router)
+    OpenApiRouter::new().nest("/v1", api_v1_router)
 }
 
 pub async fn fallback(uri: Uri) -> HttpException {
     HttpException::NotFoundException(Some(format!("No route for {uri}")))
+}
+
+pub enum HttpResponse<T> {
+    Json {
+        payload: Option<T>,
+        message: Option<String>,
+    },
+
+    RedirectTo {
+        uri: String,
+    },
+}
+
+impl<T: Serialize> IntoResponse for HttpResponse<T> {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            HttpResponse::Json { payload, message } => {
+                let status = StatusCode::OK;
+                let body = JsonResponse {
+                    status_code: status.as_u16(),
+                    payload,
+                    message,
+                };
+
+                (status, Json(body)).into_response()
+            }
+            HttpResponse::RedirectTo { uri } => Redirect::temporary(&uri).into_response(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonResponse<T> {
+    status_code: u16,
+    payload: T,
+    message: Option<String>,
 }

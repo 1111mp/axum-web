@@ -1,4 +1,4 @@
-use crate::{routes, swagger::ApiDoc};
+use crate::{logger, routes, swagger::ApiDoc};
 
 use axum::{
     http::{header, HeaderName, Method, Request},
@@ -8,32 +8,34 @@ use bb8::Pool;
 use bb8_redis::RedisConnectionManager;
 use migration::{Migrator, MigratorTrait};
 use sea_orm::Database;
-use std::{env, time::Duration};
+use std::{env, sync::Arc, time::Duration};
 use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::{
-    cors::CorsLayer,
+    cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
 };
-use tracing::info_span;
+use tracing::{info, info_span};
 use utoipa::OpenApi;
+use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::SwaggerUi;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
+#[dotenvy::load]
 #[tokio::main]
 pub async fn start() -> anyhow::Result<()> {
-    dotenvy::dotenv().ok();
-    tracing_subscriber::fmt::init();
+    let _guard = logger::logger_init();
 
+    let host = env::var("SERVER_HOST").unwrap_or("127.0.0.1".to_string());
+    let port = env::var("SERVER_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3000);
     let db_url =
         env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
     let redis_url = env::var("REDIS_URL").map_err(|_| anyhow::anyhow!("REDIS_URL must be set"))?;
-    let host = env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
-    let allowed_origins = env::var("CORS_ALLOW_ORIGINS")
-        .unwrap_or_else(|_| "http://127.0.0.1:3000,http://127.0.0.1:1212".to_string());
 
     // database
     let db = Database::connect(db_url).await?;
@@ -42,42 +44,43 @@ pub async fn start() -> anyhow::Result<()> {
     // Drop all tables from the database, then reapply all migrations
     // Migrator::fresh(&db).await?;
 
+    info!("Successfully connected to the database");
+
     // redis
     let manager = RedisConnectionManager::new(redis_url)?;
     let redis_pool = bb8::Pool::builder().build(manager).await?;
 
-    let x_request_id = HeaderName::from_static(REQUEST_ID_HEADER);
+    info!("Successfully connected to the redis");
 
-    let state = AppState { db, redis_pool };
-    // build our application with a single route
-    let app = Router::new()
-        .nest("/", routes::build())
+    info!("Server running...");
+
+    let state = Arc::new(AppState { db, redis_pool });
+
+    let x_request_id = HeaderName::from_static(REQUEST_ID_HEADER);
+    let middleware = ServiceBuilder::new()
+        .layer(SetRequestIdLayer::new(
+            x_request_id.clone(),
+            MakeRequestUuid,
+        ))
         .layer(
-            ServiceBuilder::new()
-                .layer(SetRequestIdLayer::new(
-                    x_request_id.clone(),
-                    MakeRequestUuid,
-                ))
-                .layer(
-                    TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
-                        let request_id = request.headers().get(REQUEST_ID_HEADER);
-                        match request_id {
-                            Some(request_id) => info_span!(
-                                "request",
-                                request_id = ?request_id,
-                                method = %request.method(),
-                                uri = %request.uri(),
-                            ),
-                            None => info_span!(
-                                "request",
-                                method = %request.method(),
-                                uri = %request.uri(),
-                            ),
-                        }
-                    }),
-                )
-                .layer(PropagateRequestIdLayer::new(x_request_id)),
+            TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
+                let request_id = request.headers().get(REQUEST_ID_HEADER);
+                match request_id {
+                    Some(request_id) => info_span!(
+                        "request",
+                        request_id = ?request_id,
+                        method = %request.method(),
+                        uri = %request.uri(),
+                    ),
+                    None => info_span!(
+                        "request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                    ),
+                }
+            }),
         )
+        .layer(PropagateRequestIdLayer::new(x_request_id.clone()))
         .layer(CookieManagerLayer::new())
         .layer(
             // https://github.com/tower-rs/tower-http/issues/194
@@ -89,6 +92,7 @@ pub async fn start() -> anyhow::Result<()> {
                     header::AUTHORIZATION,
                     header::CONTENT_LANGUAGE,
                     header::CONTENT_TYPE,
+                    x_request_id,
                 ])
                 .allow_methods([
                     Method::GET,
@@ -98,22 +102,29 @@ pub async fn start() -> anyhow::Result<()> {
                     Method::HEAD,
                     Method::OPTIONS,
                 ])
-                .allow_origin(
-                    allowed_origins
-                        .split(',')
-                        .filter_map(|origin| origin.parse().ok())
-                        .collect::<Vec<_>>(),
-                )
+                .allow_origin(AllowOrigin::predicate(|origin, _request_parts| {
+                    origin.as_bytes().ends_with(b".domain.net")
+                }))
                 .max_age(Duration::from_secs(3600)),
-        )
+        );
+    // build our application with a single route
+    let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .nest("/api", routes::router())
+        .layer(middleware)
+        .split_for_parts();
+
+    let app = router
         // swagger ui
-        .merge(SwaggerUi::new("/api/docs").url("/api/docs/openapi.json", ApiDoc::openapi()))
-        // .fallback(routes::fallback)
+        .merge(SwaggerUi::new("/api/docs").url("/api/docs/openapi.json", api))
+        .fallback(routes::fallback)
         .with_state(state);
 
     // run our app with hyper, listening globally on port 3000
-    let addr = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
+    let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
+
+    info!("Server listening on {}", addr);
+
     axum::serve(listener, app).await?;
 
     Ok(())

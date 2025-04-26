@@ -212,6 +212,18 @@ impl From<bb8::RunError<redis::RedisError>> for HttpException {
     }
 }
 
+impl From<bb8_redis::redis::RedisError> for HttpException {
+    fn from(err: bb8_redis::redis::RedisError) -> Self {
+        HttpException::InternalServerErrorException(Some(err.to_string()))
+    }
+}
+
+impl From<bb8::RunError<bb8_redis::redis::RedisError>> for HttpException {
+    fn from(err: bb8::RunError<bb8_redis::redis::RedisError>) -> Self {
+        HttpException::InternalServerErrorException(Some(err.to_string()))
+    }
+}
+
 #[macro_export]
 macro_rules! http_exception {
     ($variant:ident, $msg:expr) => {

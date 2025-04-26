@@ -1,5 +1,6 @@
 /target/
 /uploads/
+/logs/
 
 .DS_Store
 

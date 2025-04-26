@@ -1,7 +1,9 @@
 mod app;
 mod dtos;
-mod extensions;
+mod exception;
+mod extractors;
 mod guards;
+mod logger;
 mod routes;
 mod swagger;
 mod utils;
@@ -10,6 +12,6 @@ fn main() {
     let result = app::start();
 
     if let Some(err) = result.err() {
-        println!("Error: {err}");
+        eprintln!("{err}");
     }
 }

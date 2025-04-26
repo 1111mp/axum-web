@@ -1,37 +1,36 @@
 use crate::{
     app::AppState,
     dtos::user_dtos::{CreateUserDto, DeleteUserDto, DeleteUserParam, LoginUserDto, RedirectParam},
-    guards::APP_AUTH_KEY,
+    exception::HttpException,
+    extractors::{Body, Param, Query},
+    guards::{jwt_encode, APP_AUTH_KEY},
     http_exception, http_exception_or,
     swagger::{user_schemas::UserSchema, ErrorResponseSchema},
-    utils::{
-        exception::HttpException,
-        extractor::{Body, Param, Query},
-        http_resp::HttpResponse,
-        jwt::jwt_encode,
-    },
 };
 
-use axum::{extract::State, routing, Router};
+use std::sync::Arc;
+
+use axum::extract::State;
 use axum_macros::debug_handler;
 use entity::{post, prelude::Post, prelude::User, user};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 use tower_cookies::{Cookie, Cookies};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn public_route() -> Router<AppState> {
-    let router = Router::new()
-        .route("/", routing::post(create_one))
-        .route("/login", routing::post(login));
+use super::HttpResponse;
 
-    Router::new().nest("/user", router)
+pub fn public_route() -> OpenApiRouter<Arc<AppState>> {
+    let router = OpenApiRouter::new()
+        .routes(routes!(create_one))
+        .routes(routes!(login));
+
+    OpenApiRouter::new().nest("/user", router)
 }
 
-pub fn protected_route() -> Router<AppState> {
-    let router = Router::new()
-        .route("/:id", routing::delete(delete_one))
-        .route("/signout", routing::post(signout));
+pub fn protected_route() -> OpenApiRouter<Arc<AppState>> {
+    let router = OpenApiRouter::new().routes(routes!(delete_one, signout));
 
-    Router::new().nest("/user", router)
+    OpenApiRouter::new().nest("/user", router)
 }
 
 /// Create new User
@@ -39,16 +38,17 @@ pub fn protected_route() -> Router<AppState> {
 /// Tries to create a new User or fails with 409 conflict if already exists.
 #[utoipa::path(
     post,
-    path = "/api/v1/user",
+    path = "",
     request_body = CreateUserDto,
     responses(
         (status = 200, description = "User created successfully", body = UserSchema),
         (status = 409, description = "User already exists", body = ErrorResponseSchema),
-    )
+    ),
+    tag = "User"
 )]
 #[debug_handler]
 pub(crate) async fn create_one(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     cookies: Cookies,
     Body(input): Body<CreateUserDto>,
 ) -> Result<HttpResponse<user::Model>, HttpException> {
@@ -61,7 +61,7 @@ pub(crate) async fn create_one(
     .insert(&state.db)
     .await?;
 
-    let token = jwt_encode(&user).map_err(|_| HttpException::UnauthorizedException(None))?;
+    let token = jwt_encode(user.id).map_err(|_| HttpException::UnauthorizedException(None))?;
     let cookie = Cookie::build((APP_AUTH_KEY.as_str(), token))
         .secure(true)
         .http_only(true)
@@ -70,7 +70,7 @@ pub(crate) async fn create_one(
 
     Ok(HttpResponse::Json {
         message: None,
-        data: Some(user),
+        payload: Some(user),
     })
 }
 
@@ -79,16 +79,17 @@ pub(crate) async fn create_one(
 /// If successful, identity credentials are returned
 #[utoipa::path(
     post,
-    path = "/api/v1/user/login",
+    path = "/login",
     request_body = LoginUserDto,
     responses(
         (status = 200, description = "User created successfully", headers(("Set-Cookie" = String, description = "identity credentials")), body = UserSchema),
         (status = 400, description = "User not found", body = ErrorResponseSchema),
-    )
+    ),
+    tag = "User"
 )]
 #[debug_handler]
 pub(crate) async fn login(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     cookies: Cookies,
     Body(input): Body<LoginUserDto>,
 ) -> Result<HttpResponse<user::Model>, HttpException> {
@@ -107,7 +108,7 @@ pub(crate) async fn login(
         http_exception!(UnauthorizedException, "Invalid email or password");
     }
 
-    let token = jwt_encode(&user).map_err(|_| HttpException::UnauthorizedException(None))?;
+    let token = jwt_encode(user.id).map_err(|_| HttpException::UnauthorizedException(None))?;
     let cookie = Cookie::build((APP_AUTH_KEY.as_str(), token))
         .secure(true)
         .http_only(true)
@@ -116,7 +117,7 @@ pub(crate) async fn login(
 
     Ok(HttpResponse::Json {
         message: None,
-        data: Some(user),
+        payload: Some(user),
     })
 }
 
@@ -125,7 +126,7 @@ pub(crate) async fn login(
 /// User logout
 #[utoipa::path(
     post,
-    path = "/api/v1/user/signout",
+    path = "/signout",
     request_body = Option<RedirectParam>,
     responses(
         (status = 200, description = "User logout successfully", body = ErrorResponseSchema),
@@ -133,7 +134,8 @@ pub(crate) async fn login(
     ),
     security(
         ("app_auth_key" = [])
-    )
+    ),
+    tag = "User"
 )]
 #[debug_handler]
 async fn signout(
@@ -151,7 +153,7 @@ async fn signout(
 /// Delete User by id. Returns either 200 success of 404 with RespError if User is not found.
 #[utoipa::path(
         delete,
-        path = "/api/v1/user/{id}",
+        path = "/{id}",
         responses(
             (status = 200, description = "User delete done successfully", body = ErrorResponseSchema),
             (status = 401, description = "Unauthorized to delete User", body = ErrorResponseSchema),
@@ -163,11 +165,12 @@ async fn signout(
         ),
         security(
             ("app_auth_key" = [])
-        )
+        ),
+        tag = "User"
     )]
 #[debug_handler]
 pub(crate) async fn delete_one(
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     cookies: Cookies,
     Param(input): Param<DeleteUserParam>,
     Query(dto): Query<DeleteUserDto>,
@@ -191,6 +194,6 @@ pub(crate) async fn delete_one(
             "The user {} has been successfully deleted",
             input.id
         )),
-        data: None,
+        payload: None,
     })
 }
