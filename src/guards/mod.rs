@@ -63,7 +63,7 @@ where
         let claims = parts
             .extensions
             .get::<Claims>()
-            .ok_or((StatusCode::UNAUTHORIZED, "UnAuthorized"))?;
+            .ok_or((StatusCode::UNAUTHORIZED, "Unauthorized"))?;
 
         Ok(claims.clone())
     }

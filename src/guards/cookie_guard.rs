@@ -24,16 +24,12 @@ where
         let cookie = cookies
             .get(APP_AUTH_KEY.as_str())
             .map(|c| c.value().to_string())
-            .ok_or((StatusCode::UNAUTHORIZED, "UnAuthorized"))?;
-
-        info!("cookie: {}", cookie);
+            .ok_or((StatusCode::UNAUTHORIZED, "Unauthorized"))?;
 
         let claims = super::jwt_decode(&cookie).map_err(|err| {
             info!("err: {}", err.to_string());
-            (StatusCode::UNAUTHORIZED, "UnAuthorized")
+            (StatusCode::UNAUTHORIZED, "Unauthorized")
         })?;
-
-        info!("claims: {:?}", claims);
 
         parts.extensions.insert(claims);
         Ok(Self)

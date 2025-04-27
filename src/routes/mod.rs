@@ -38,6 +38,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 
 pub mod post;
@@ -88,7 +89,7 @@ impl<T: Serialize> IntoResponse for HttpResponse<T> {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 struct JsonResponse<T> {
     status_code: u16,

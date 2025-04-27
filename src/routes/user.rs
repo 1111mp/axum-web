@@ -5,7 +5,6 @@ use crate::{
     extractors::{Body, Param, Query},
     guards::{jwt_encode, APP_AUTH_KEY},
     http_exception, http_exception_or,
-    swagger::{user_schemas::UserSchema, ErrorResponseSchema},
 };
 
 use std::sync::Arc;
@@ -14,10 +13,12 @@ use axum::extract::State;
 use axum_macros::debug_handler;
 use entity::{post, prelude::Post, prelude::User, user};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
+use serde::{Deserialize, Serialize};
 use tower_cookies::{Cookie, Cookies};
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use super::HttpResponse;
+use super::{HttpResponse, JsonResponse};
 
 pub fn public_route() -> OpenApiRouter<Arc<AppState>> {
     let router = OpenApiRouter::new()
@@ -37,14 +38,14 @@ pub fn protected_route() -> OpenApiRouter<Arc<AppState>> {
 ///
 /// Tries to create a new User or fails with 409 conflict if already exists.
 #[utoipa::path(
-    post,
-    path = "",
-    request_body = CreateUserDto,
-    responses(
-        (status = 200, description = "User created successfully", body = UserSchema),
-        (status = 409, description = "User already exists", body = ErrorResponseSchema),
-    ),
-    tag = "User"
+  post,
+  path = "",
+  request_body = CreateUserDto,
+  responses(
+    (status = 200, description = "User created successfully", body = JsonResponse<UserSchema>),
+    (status = 409, description = "User already exists"),
+  ),
+  tag = crate::api_doc::USER_TAG
 )]
 #[debug_handler]
 pub(crate) async fn create_one(
@@ -78,14 +79,14 @@ pub(crate) async fn create_one(
 ///
 /// If successful, identity credentials are returned
 #[utoipa::path(
-    post,
-    path = "/login",
-    request_body = LoginUserDto,
-    responses(
-        (status = 200, description = "User created successfully", headers(("Set-Cookie" = String, description = "identity credentials")), body = UserSchema),
-        (status = 400, description = "User not found", body = ErrorResponseSchema),
-    ),
-    tag = "User"
+  post,
+  path = "/login",
+  request_body = LoginUserDto,
+  responses(
+    (status = 200, description = "User created successfully", headers(("Set-Cookie" = String, description = "identity credentials")), body = JsonResponse<UserSchema>),
+    (status = 400, description = "User not found"),
+  ),
+  tag = crate::api_doc::USER_TAG
 )]
 #[debug_handler]
 pub(crate) async fn login(
@@ -125,17 +126,17 @@ pub(crate) async fn login(
 ///
 /// User logout
 #[utoipa::path(
-    post,
-    path = "/signout",
-    request_body = Option<RedirectParam>,
-    responses(
-        (status = 200, description = "User logout successfully", body = ErrorResponseSchema),
-        (status = 401, description = "Unauthorized to logout", body = ErrorResponseSchema),
-    ),
-    security(
-        ("app_auth_key" = [])
-    ),
-    tag = "User"
+  post,
+  path = "/signout",
+  request_body = Option<RedirectParam>,
+  responses(
+    (status = 200, description = "User logout successfully"),
+    (status = 401, description = "Unauthorized"),
+  ),
+  security(
+    ("cookie_security" = [])
+  ),
+  tag = crate::api_doc::USER_TAG
 )]
 #[debug_handler]
 async fn signout(
@@ -152,22 +153,22 @@ async fn signout(
 ///
 /// Delete User by id. Returns either 200 success of 404 with RespError if User is not found.
 #[utoipa::path(
-        delete,
-        path = "/{id}",
-        responses(
-            (status = 200, description = "User delete done successfully", body = ErrorResponseSchema),
-            (status = 401, description = "Unauthorized to delete User", body = ErrorResponseSchema),
-            (status = 404, description = "User not found", body = ErrorResponseSchema)
-        ),
-        params(
-            ("id" = i32, Path, description = "User database id"),
-            ("thoroughly" = Option<bool>, Query, description = "Whether to completely delete all user related information, default value is false")
-        ),
-        security(
-            ("app_auth_key" = [])
-        ),
-        tag = "User"
-    )]
+	delete,
+	path = "/{id}",
+	responses(
+		(status = 200, description = "User delete done successfully"),
+		(status = 401, description = "Unauthorized to delete User"),
+		(status = 404, description = "User not found")
+		),
+	params(
+		("id" = i32, Path, description = "User database id"),
+		("thoroughly" = Option<bool>, Query, description = "Whether to completely delete all user related information, default value is false")
+	),
+	security(
+		("cookie_security" = [])
+	),
+  tag = crate::api_doc::USER_TAG
+)]
 #[debug_handler]
 pub(crate) async fn delete_one(
     State(state): State<Arc<AppState>>,
@@ -196,4 +197,15 @@ pub(crate) async fn delete_one(
         )),
         payload: None,
     })
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+struct UserSchema {
+    pub id: i32,
+    pub name: String,
+    pub email: String,
+    pub token: String,
+    pub created_at: String,
+    pub updated_at: String,
 }

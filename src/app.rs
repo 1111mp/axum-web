@@ -1,13 +1,11 @@
-use crate::{logger, routes, swagger::ApiDoc};
+use crate::{api_doc::ApiDoc, events, logger, routes};
 
-use axum::{
-    http::{header, HeaderName, Method, Request},
-    Router,
-};
+use axum::http::{header, HeaderName, Method, Request};
 use bb8::Pool;
 use bb8_redis::RedisConnectionManager;
 use migration::{Migrator, MigratorTrait};
 use sea_orm::Database;
+use socketioxide::{handler::ConnectHandler, SocketIo};
 use std::{env, sync::Arc, time::Duration};
 use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
@@ -26,9 +24,10 @@ const REQUEST_ID_HEADER: &str = "x-request-id";
 #[dotenvy::load]
 #[tokio::main]
 pub async fn start() -> anyhow::Result<()> {
+    // Exiting the context of `main` will drop the `_guard` and any remaining logs should get flushed
     let _guard = logger::logger_init();
 
-    let host = env::var("SERVER_HOST").unwrap_or("127.0.0.1".to_string());
+    let host = env::var("SERVER_HOST").unwrap_or("0.0.0.0".to_string());
     let port = env::var("SERVER_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -52,9 +51,7 @@ pub async fn start() -> anyhow::Result<()> {
 
     info!("Successfully connected to the redis");
 
-    info!("Server running...");
-
-    let state = Arc::new(AppState { db, redis_pool });
+    let app_state = Arc::new(AppState { db, redis_pool });
 
     let x_request_id = HeaderName::from_static(REQUEST_ID_HEADER);
     let middleware = ServiceBuilder::new()
@@ -110,20 +107,31 @@ pub async fn start() -> anyhow::Result<()> {
     // build our application with a single route
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .nest("/api", routes::router())
-        .layer(middleware)
         .split_for_parts();
 
+    // socket
+    let (layer, io) = SocketIo::builder()
+        .with_state(events::store::Clients::default())
+        .build_layer();
+    io.ns(
+        "/socket",
+        events::handlers::on_connection.with(events::handlers::authenticate_middleware),
+    );
+
     let app = router
+        .layer(middleware)
         // swagger ui
         .merge(SwaggerUi::new("/api/docs").url("/api/docs/openapi.json", api))
         .fallback(routes::fallback)
-        .with_state(state);
+        .layer(layer)
+        .with_state(app_state);
+
+    info!("Starting server");
 
     // run our app with hyper, listening globally on port 3000
-    let addr = format!("{host}:{port}");
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
 
-    info!("Server listening on {}", addr);
+    info!("Listening on {host}:{port}");
 
     axum::serve(listener, app).await?;
 

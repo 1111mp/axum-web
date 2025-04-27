@@ -52,10 +52,10 @@ where
         let TypedHeader(Authorization(bearer)) = parts
             .extract::<TypedHeader<Authorization<Bearer>>>()
             .await
-            .map_err(|_| (StatusCode::UNAUTHORIZED, "UnAuthorized"))?;
+            .map_err(|_| (StatusCode::UNAUTHORIZED, "Unauthorized"))?;
 
         let claims = super::jwt_decode(bearer.token())
-            .map_err(|_| (StatusCode::UNAUTHORIZED, "UnAuthorized"))?;
+            .map_err(|_| (StatusCode::UNAUTHORIZED, "Unauthorized"))?;
 
         parts.extensions.insert(claims);
         Ok(Self)

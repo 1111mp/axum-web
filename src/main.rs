@@ -1,11 +1,12 @@
+mod api_doc;
 mod app;
 mod dtos;
+mod events;
 mod exception;
 mod extractors;
 mod guards;
 mod logger;
 mod routes;
-mod swagger;
 mod utils;
 
 fn main() {
