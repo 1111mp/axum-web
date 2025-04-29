@@ -143,15 +143,20 @@ impl HttpException {
                 StatusCode::HTTP_VERSION_NOT_SUPPORTED,
                 "HTTP Version Not Supported".to_string(),
             ),
-            HttpException::DbException(db_err) => match db_err.sql_err() {
-                Some(SqlErr::UniqueConstraintViolation(msg)) => (StatusCode::BAD_REQUEST, msg),
-                Some(SqlErr::ForeignKeyConstraintViolation(msg)) => (StatusCode::BAD_REQUEST, msg),
-                Some(_) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Unknown Database Error".to_string(),
-                ),
-                None => (StatusCode::INTERNAL_SERVER_ERROR, db_err.to_string()),
-            },
+            HttpException::DbException(db_err) => {
+                tracing::error!(%db_err);
+                match db_err.sql_err() {
+                    Some(SqlErr::UniqueConstraintViolation(msg)) => (StatusCode::BAD_REQUEST, msg),
+                    Some(SqlErr::ForeignKeyConstraintViolation(msg)) => {
+                        (StatusCode::BAD_REQUEST, msg)
+                    }
+                    Some(_) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Unknown Database Error".to_string(),
+                    ),
+                    None => (StatusCode::INTERNAL_SERVER_ERROR, db_err.to_string()),
+                }
+            }
         }
     }
 }
@@ -196,30 +201,35 @@ impl IntoResponse for HttpException {
 
 impl From<io::Error> for HttpException {
     fn from(err: io::Error) -> Self {
+        tracing::error!(%err);
         HttpException::InternalServerErrorException(Some(err.to_string()))
     }
 }
 
 impl From<redis::RedisError> for HttpException {
     fn from(err: redis::RedisError) -> Self {
+        tracing::error!(%err);
         HttpException::InternalServerErrorException(Some(err.to_string()))
     }
 }
 
 impl From<bb8::RunError<redis::RedisError>> for HttpException {
     fn from(err: bb8::RunError<redis::RedisError>) -> Self {
+        tracing::error!(%err);
         HttpException::InternalServerErrorException(Some(err.to_string()))
     }
 }
 
 impl From<bb8_redis::redis::RedisError> for HttpException {
     fn from(err: bb8_redis::redis::RedisError) -> Self {
+        tracing::error!(%err);
         HttpException::InternalServerErrorException(Some(err.to_string()))
     }
 }
 
 impl From<bb8::RunError<bb8_redis::redis::RedisError>> for HttpException {
     fn from(err: bb8::RunError<bb8_redis::redis::RedisError>) -> Self {
+        tracing::error!(%err);
         HttpException::InternalServerErrorException(Some(err.to_string()))
     }
 }

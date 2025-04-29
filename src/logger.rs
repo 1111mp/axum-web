@@ -1,9 +1,9 @@
-use tracing::{level_filters::LevelFilter, subscriber::set_global_default};
+use tracing::{level_filters::LevelFilter, subscriber::set_global_default, Level};
 use tracing_appender::{
     non_blocking::WorkerGuard,
     rolling::{RollingFileAppender, Rotation},
 };
-use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer};
+use tracing_subscriber::{filter::filter_fn, fmt, layer::SubscriberExt, EnvFilter, Layer};
 
 pub fn logger_init() -> (WorkerGuard, WorkerGuard) {
     let logger_dir = std::env::var("LOG_DIR").unwrap_or("./logs".to_string());
@@ -34,13 +34,14 @@ pub fn logger_init() -> (WorkerGuard, WorkerGuard) {
         .with(
             fmt::Layer::new()
                 .with_writer(info_non_blocking)
-                .with_ansi(false)
-                .with_filter(LevelFilter::INFO),
+                .with_filter(filter_fn(|metadata| {
+                    let level = metadata.level();
+                    level == &Level::INFO || level == &Level::WARN
+                })),
         )
         .with(
             fmt::Layer::new()
                 .with_writer(error_non_blocking)
-                .with_ansi(false)
                 .with_filter(LevelFilter::ERROR),
         );
 

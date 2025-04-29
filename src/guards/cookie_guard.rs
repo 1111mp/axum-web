@@ -6,7 +6,6 @@ use axum::{
     http::{request::Parts, StatusCode},
 };
 use tower_cookies::Cookies;
-use tracing::info;
 
 pub static APP_AUTH_KEY: LazyLock<String> =
     LazyLock::new(|| std::env::var("APP_AUTH_KEY").expect("APP_AUTH_KEY must be set"));
@@ -27,7 +26,7 @@ where
             .ok_or((StatusCode::UNAUTHORIZED, "Unauthorized"))?;
 
         let claims = super::jwt_decode(&cookie).map_err(|err| {
-            info!("err: {}", err.to_string());
+            tracing::error!(%err);
             (StatusCode::UNAUTHORIZED, "Unauthorized")
         })?;
 
