@@ -1,26 +1,22 @@
+use super::{HttpResponse, JsonResponse};
 use crate::{
-    app::AppState,
+    core::{config, exception::HttpException, state},
     dtos::user_dtos::{CreateUserDto, DeleteUserDto, DeleteUserParam, LoginUserDto, RedirectParam},
-    exception::HttpException,
     extractors::{Body, Param, Query},
-    guards::{jwt_encode, APP_AUTH_KEY},
+    guards::jwt_encode,
     http_exception, http_exception_or,
 };
-
-use std::sync::Arc;
-
 use axum::extract::State;
 use axum_macros::debug_handler;
 use entity::{post, prelude::Post, prelude::User, user};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tower_cookies::{Cookie, Cookies};
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use super::{HttpResponse, JsonResponse};
-
-pub fn public_route() -> OpenApiRouter<Arc<AppState>> {
+pub fn public_route() -> OpenApiRouter<Arc<state::AppState>> {
     let router = OpenApiRouter::new()
         .routes(routes!(create_one))
         .routes(routes!(login));
@@ -28,7 +24,7 @@ pub fn public_route() -> OpenApiRouter<Arc<AppState>> {
     OpenApiRouter::new().nest("/user", router)
 }
 
-pub fn protected_route() -> OpenApiRouter<Arc<AppState>> {
+pub fn protected_route() -> OpenApiRouter<Arc<state::AppState>> {
     let router = OpenApiRouter::new().routes(routes!(delete_one, signout));
 
     OpenApiRouter::new().nest("/user", router)
@@ -49,7 +45,7 @@ pub fn protected_route() -> OpenApiRouter<Arc<AppState>> {
 )]
 #[debug_handler]
 pub(crate) async fn create_one(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<state::AppState>>,
     cookies: Cookies,
     Body(input): Body<CreateUserDto>,
 ) -> Result<HttpResponse<user::Model>, HttpException> {
@@ -62,8 +58,10 @@ pub(crate) async fn create_one(
     .insert(&state.db)
     .await?;
 
-    let token = jwt_encode(user.id).map_err(|_| HttpException::UnauthorizedException(None))?;
-    let cookie = Cookie::build((APP_AUTH_KEY.as_str(), token))
+    let config = config::Config::global();
+    let token = jwt_encode(user.id, config.jwt_keys().encoding())
+        .map_err(|_| HttpException::UnauthorizedException(None))?;
+    let cookie = Cookie::build((config.app_auth_key(), token))
         .secure(true)
         .http_only(true)
         .build();
@@ -90,7 +88,7 @@ pub(crate) async fn create_one(
 )]
 #[debug_handler]
 pub(crate) async fn login(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<state::AppState>>,
     cookies: Cookies,
     Body(input): Body<LoginUserDto>,
 ) -> Result<HttpResponse<user::Model>, HttpException> {
@@ -109,8 +107,10 @@ pub(crate) async fn login(
         http_exception!(UnauthorizedException, "Invalid email or password");
     }
 
-    let token = jwt_encode(user.id).map_err(|_| HttpException::UnauthorizedException(None))?;
-    let cookie = Cookie::build((APP_AUTH_KEY.as_str(), token))
+    let config = config::Config::global();
+    let token = jwt_encode(user.id, config.jwt_keys().encoding())
+        .map_err(|_| HttpException::UnauthorizedException(None))?;
+    let cookie = Cookie::build((config.app_auth_key(), token))
         .secure(true)
         .http_only(true)
         .build();
@@ -143,7 +143,8 @@ async fn signout(
     cookies: Cookies,
     Body(input): Body<RedirectParam>,
 ) -> Result<HttpResponse<()>, HttpException> {
-    cookies.remove(Cookie::from(APP_AUTH_KEY.as_str()));
+    let config = config::Config::global();
+    cookies.remove(Cookie::from(config.app_auth_key()));
 
     let uri = input.uri.unwrap_or("/login".to_string());
     Ok(HttpResponse::RedirectTo { uri })
@@ -171,7 +172,7 @@ async fn signout(
 )]
 #[debug_handler]
 pub(crate) async fn delete_one(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<state::AppState>>,
     cookies: Cookies,
     Param(input): Param<DeleteUserParam>,
     Query(dto): Query<DeleteUserDto>,
@@ -188,7 +189,8 @@ pub(crate) async fn delete_one(
             .await?;
     }
     txn.commit().await?;
-    cookies.remove(Cookie::from(APP_AUTH_KEY.as_str()));
+    let config = config::Config::global();
+    cookies.remove(Cookie::from(config.app_auth_key()));
 
     Ok(HttpResponse::Json {
         message: Some(format!(

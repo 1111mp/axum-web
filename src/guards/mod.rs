@@ -1,12 +1,8 @@
-use std::sync::LazyLock;
-
 use axum::{
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
 };
-use jsonwebtoken::{
-    decode, encode, errors::Error, Algorithm, DecodingKey, EncodingKey, Header, Validation,
-};
+use jsonwebtoken::{decode, encode, errors::Error, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
@@ -14,12 +10,6 @@ mod cookie_guard;
 mod jwt_guard;
 
 pub use cookie_guard::*;
-pub use jwt_guard::*;
-
-static KEYS: LazyLock<Keys> = LazyLock::new(|| {
-    let secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-    Keys::new(secret.as_bytes())
-});
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Claims {
@@ -69,16 +59,16 @@ where
     }
 }
 
-pub fn jwt_encode(user_id: i32) -> anyhow::Result<String, Error> {
+pub fn jwt_encode(user_id: i32, encoding: &EncodingKey) -> anyhow::Result<String, Error> {
     let iat = OffsetDateTime::now_utc();
     let exp = iat + Duration::days(1);
     let claims = Claims::new(user_id, iat, exp);
 
-    encode(&Header::default(), &claims, &KEYS.encoding)
+    encode(&Header::default(), &claims, encoding)
 }
 
-pub fn jwt_decode(token: &str) -> anyhow::Result<Claims> {
-    let decoded = decode::<Claims>(token, &KEYS.decoding, &Validation::default())?;
+pub fn jwt_decode(token: &str, decoding: &DecodingKey) -> anyhow::Result<Claims> {
+    let decoded = decode::<Claims>(token, decoding, &Validation::default())?;
     Ok(decoded.claims)
 }
 
@@ -103,19 +93,5 @@ mod jwt_numeric_date {
     {
         OffsetDateTime::from_unix_timestamp(i64::deserialize(deserializer)?)
             .map_err(|_| serde::de::Error::custom("invalid Unix timestamp value"))
-    }
-}
-
-struct Keys {
-    encoding: EncodingKey,
-    decoding: DecodingKey,
-}
-
-impl Keys {
-    fn new(secret: &[u8]) -> Self {
-        Self {
-            encoding: EncodingKey::from_secret(secret),
-            decoding: DecodingKey::from_secret(secret),
-        }
     }
 }

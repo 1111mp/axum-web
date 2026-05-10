@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use anyhow::Result;
 use axum::{
     extract::FromRequestParts,
@@ -7,8 +5,7 @@ use axum::{
 };
 use tower_cookies::Cookies;
 
-pub static APP_AUTH_KEY: LazyLock<String> =
-    LazyLock::new(|| std::env::var("APP_AUTH_KEY").expect("APP_AUTH_KEY must be set"));
+use crate::core::config;
 
 pub struct CookieGuard;
 
@@ -19,13 +16,14 @@ where
     type Rejection = (StatusCode, &'static str);
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let config = config::Config::global();
         let cookies = Cookies::from_request_parts(parts, state).await?;
         let cookie = cookies
-            .get(APP_AUTH_KEY.as_str())
+            .get(config.app_auth_key())
             .map(|c| c.value().to_string())
             .ok_or((StatusCode::UNAUTHORIZED, "Unauthorized"))?;
 
-        let claims = super::jwt_decode(&cookie).map_err(|err| {
+        let claims = super::jwt_decode(&cookie, config.jwt_keys().decoding()).map_err(|err| {
             tracing::error!(%err);
             (StatusCode::UNAUTHORIZED, "Unauthorized")
         })?;

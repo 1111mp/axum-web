@@ -1,10 +1,5 @@
-use crate::{app::AppState, exception::HttpException};
-
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
+use super::HttpResponse;
+use crate::core::{exception::HttpException, state};
 use axum::{
     extract::DefaultBodyLimit,
     http::StatusCode,
@@ -13,15 +8,17 @@ use axum::{
 use axum_macros::debug_handler;
 use axum_typed_multipart::{BaseMultipart, FieldData, TryFromMultipart, TypedMultipartError};
 use serde::Serialize;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tempfile::NamedTempFile;
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use super::HttpResponse;
-
 const UPLOADS_DIRECTORY: &str = "uploads";
 
-pub fn protected_route() -> OpenApiRouter<Arc<AppState>> {
+pub fn protected_route() -> OpenApiRouter<Arc<state::AppState>> {
     let router = OpenApiRouter::new()
         .routes(routes!(upload_handler))
         // 200M

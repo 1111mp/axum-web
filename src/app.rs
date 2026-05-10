@@ -1,12 +1,14 @@
-use crate::{api_doc::ApiDoc, events, logger, routes};
-
+use crate::{
+    api_doc::ApiDoc,
+    core::{config, logger, state},
+    events, routes,
+};
 use axum::http::{header, HeaderName, Method, Request};
-use bb8::Pool;
 use bb8_redis::RedisConnectionManager;
 use migration::{Migrator, MigratorTrait};
 use sea_orm::Database;
 use socketioxide::{handler::ConnectHandler, SocketIo};
-use std::{env, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tower::ServiceBuilder;
 use tower_cookies::CookieManagerLayer;
 use tower_http::{
@@ -21,37 +23,37 @@ use utoipa_swagger_ui::SwaggerUi;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
-#[dotenvy::load]
+#[dotenvy::load(path = ".env.prod")]
+#[dotenvy::load(path = ".env.local")]
+#[dotenvy::load(path = ".env")]
 #[tokio::main]
 pub async fn start() -> anyhow::Result<()> {
+    let config = config::Config::global();
     // Exiting the context of `main` will drop the `_guard` and any remaining logs should get flushed
-    let _guard = logger::logger_init();
-
-    let host = env::var("SERVER_HOST").unwrap_or("0.0.0.0".to_string());
-    let port = env::var("SERVER_PORT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(3000);
-    let db_url =
-        env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
-    let redis_url = env::var("REDIS_URL").map_err(|_| anyhow::anyhow!("REDIS_URL must be set"))?;
+    let _guard = logger::logger_init(config);
 
     // database
-    let db = Database::connect(db_url).await?;
+    let db = Database::connect(config.database_url()).await?;
     // Apply all pending migrations
-    Migrator::up(&db, None).await?;
+    // Migrator::up(&db, None).await?;
     // Drop all tables from the database, then reapply all migrations
     // Migrator::fresh(&db).await?;
+
+    // Sync the schema with the database
+    // https://www.sea-ql.org/SeaORM/zh-CN/docs/generate-entity/entity-first/
+    // db.get_schema_registry("axum-web::entity::*")
+    //     .sync(&db)
+    //     .await?;
 
     info!("Successfully connected to the database");
 
     // redis
-    let manager = RedisConnectionManager::new(redis_url)?;
+    let manager = RedisConnectionManager::new(config.redis_url())?;
     let redis_pool = bb8::Pool::builder().build(manager).await?;
 
     info!("Successfully connected to the redis");
 
-    let app_state = Arc::new(AppState { db, redis_pool });
+    let app_state = Arc::new(state::AppState { db, redis_pool });
 
     let x_request_id = HeaderName::from_static(REQUEST_ID_HEADER);
     let middleware = ServiceBuilder::new()
@@ -128,18 +130,48 @@ pub async fn start() -> anyhow::Result<()> {
 
     info!("Starting server");
 
-    // run our app with hyper, listening globally on port 3000
-    let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
+    let addr = format!("{}:{}", config.server_host(), config.server_port(),);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    info!("Listening on {host}:{port}");
+    info!("Listening on {}", &addr);
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    info!("Server shutdown");
 
     Ok(())
 }
 
-#[derive(Clone)]
-pub struct AppState {
-    pub db: sea_orm::DatabaseConnection,
-    pub redis_pool: Pool<RedisConnectionManager>,
+async fn shutdown_signal() {
+    use tokio::signal;
+
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+          info!("Ctrl+C received, shutting down");
+        },
+        _ = terminate => {
+          info!("Terminate signal received, shutting down");
+        },
+    }
+
+    info!("Received shutdown signal, shutting down...");
 }

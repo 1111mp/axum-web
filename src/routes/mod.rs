@@ -24,13 +24,9 @@
  *             responses
  */
 use crate::{
-    app::AppState,
-    exception::HttpException,
-    guards::{self, CookieGuard},
+    core::{exception::HttpException, state},
+    guards::CookieGuard,
 };
-
-use std::sync::Arc;
-
 use axum::{
     http::{StatusCode, Uri},
     middleware,
@@ -38,6 +34,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use std::sync::Arc;
 use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 
@@ -45,12 +42,12 @@ pub mod post;
 pub mod upload;
 pub mod user;
 
-pub fn router() -> OpenApiRouter<Arc<AppState>> {
+pub fn router() -> OpenApiRouter<Arc<state::AppState>> {
     let api_v1_router = OpenApiRouter::new()
         .merge(user::protected_route())
         .merge(post::protected_route())
-        .route_layer(middleware::from_extractor::<CookieGuard>())
         .merge(upload::protected_route())
+        .route_layer(middleware::from_extractor::<CookieGuard>())
         .merge(user::public_route());
 
     OpenApiRouter::new().nest("/v1", api_v1_router)

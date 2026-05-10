@@ -1,4 +1,4 @@
-use crate::guards::APP_AUTH_KEY;
+use crate::core::config;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
     Modify, OpenApi,
@@ -13,7 +13,7 @@ pub const UPLOAD_TAG: &str = "Upload";
 	info(description = "App api docs"),
   servers(
     (url = "http://127.0.0.1:3000", description = "Local dev server"),
-		(url = "http://api.{domain}:{port}", description = "remote api", 
+		(url = "http://api.{domain}:{port}", description = "remote api",
       variables(
 				("domain" = (default = "sarosgame.net", description = "Default domain for API")),
 				("port" = (default = "3000", enum_values("3000", "8080", "4000"), description = "Supported ports for the API"))
@@ -34,10 +34,11 @@ pub struct SecurityAddon;
 impl Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         if let Some(components) = openapi.components.as_mut() {
+            let config = config::Config::global();
             components.add_security_schemes_from_iter([
                 (
                     "cookie_security",
-                    SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(APP_AUTH_KEY.as_str()))),
+                    SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(config.app_auth_key()))),
                 ),
                 (
                     "header_security",

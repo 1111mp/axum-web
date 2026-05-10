@@ -1,3 +1,4 @@
+use crate::core::config;
 use axum::{
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
@@ -54,10 +55,12 @@ where
             .await
             .map_err(|_| (StatusCode::UNAUTHORIZED, "Unauthorized"))?;
 
-        let claims = super::jwt_decode(bearer.token()).map_err(|err| {
-            tracing::error!(%err);
-            (StatusCode::UNAUTHORIZED, "Unauthorized")
-        })?;
+        let config = config::Config::global();
+        let claims =
+            super::jwt_decode(bearer.token(), config.jwt_keys().decoding()).map_err(|err| {
+                tracing::error!(%err);
+                (StatusCode::UNAUTHORIZED, "Unauthorized")
+            })?;
 
         parts.extensions.insert(claims);
         Ok(Self)

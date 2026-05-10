@@ -1,13 +1,9 @@
-use std::sync::Arc;
-
+use crate::core::config;
+use crate::{guards::jwt_decode, utils::get_cookie_value};
 use anyhow::{anyhow, Result};
 use axum::http::header;
 use socketioxide::extract::{Extension, SocketRef, State};
-
-use crate::{
-    guards::{jwt_decode, APP_AUTH_KEY},
-    utils::get_cookie_value,
-};
+use std::sync::Arc;
 
 use super::store::{Client, Clients};
 
@@ -22,7 +18,7 @@ pub async fn on_connection(
     eprintln!("clients: {:?}", clients);
 
     socket.on_disconnect(
-        |_s: SocketRef, Extension::<Arc<Client>>(client), State::<Clients>(clients)| {
+        async |_s: SocketRef, Extension::<Arc<Client>>(client), State::<Clients>(clients)| {
             // remove client from clients
             clients.remove(client.user_id);
         },
@@ -41,8 +37,9 @@ pub async fn authenticate_middleware(
         .get(header::COOKIE)
         .and_then(|c| c.to_str().ok())
         .ok_or(anyhow!("Unauthorized"))?;
-    let cookie = get_cookie_value(cookies, APP_AUTH_KEY.as_str()).ok_or(anyhow!("Unauthorized"))?;
-    let claims = jwt_decode(&cookie).expect("Unauthorized");
+    let config = config::Config::global();
+    let cookie = get_cookie_value(cookies, config.app_auth_key()).ok_or(anyhow!("Unauthorized"))?;
+    let claims = jwt_decode(&cookie, config.jwt_keys().decoding()).expect("Unauthorized");
 
     let client = Arc::new(Client::new(socket.id, claims.user_id));
     socket.extensions.insert(client.clone());

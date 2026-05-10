@@ -5,6 +5,7 @@
 .DS_Store
 
 .env
+.env.*
 
 ### Intellij ###
 # Ignore all IDEA files. This means you may have to rebuild the project on your

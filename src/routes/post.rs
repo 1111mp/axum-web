@@ -1,18 +1,19 @@
-use crate::{app::AppState, exception::HttpException, guards::Claims, http_exception_or};
-
-use std::sync::Arc;
-
+use super::{HttpResponse, JsonResponse};
+use crate::{
+    core::{exception::HttpException, state},
+    guards::Claims,
+    http_exception_or,
+};
 use axum::extract::{Path, State};
 use axum_macros::debug_handler;
 use entity::{post, prelude::Post};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use super::{HttpResponse, JsonResponse};
-
-pub fn protected_route() -> OpenApiRouter<Arc<AppState>> {
+pub fn protected_route() -> OpenApiRouter<Arc<state::AppState>> {
     let router = OpenApiRouter::new()
         .routes(routes!(get_one))
         .routes(routes!(get_all));
@@ -36,7 +37,7 @@ pub fn protected_route() -> OpenApiRouter<Arc<AppState>> {
 )]
 #[debug_handler]
 async fn get_all(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<state::AppState>>,
     claims: Claims,
 ) -> Result<HttpResponse<Vec<post::Model>>, HttpException> {
     let posts = Post::find()
@@ -70,7 +71,7 @@ async fn get_all(
 )]
 #[debug_handler]
 async fn get_one(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<state::AppState>>,
     Path(id): Path<i32>,
 ) -> Result<HttpResponse<post::Model>, HttpException> {
     let post = http_exception_or!(

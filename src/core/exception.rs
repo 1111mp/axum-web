@@ -206,20 +206,6 @@ impl From<io::Error> for HttpException {
     }
 }
 
-impl From<redis::RedisError> for HttpException {
-    fn from(err: redis::RedisError) -> Self {
-        tracing::error!(%err);
-        HttpException::InternalServerErrorException(Some(err.to_string()))
-    }
-}
-
-impl From<bb8::RunError<redis::RedisError>> for HttpException {
-    fn from(err: bb8::RunError<redis::RedisError>) -> Self {
-        tracing::error!(%err);
-        HttpException::InternalServerErrorException(Some(err.to_string()))
-    }
-}
-
 impl From<bb8_redis::redis::RedisError> for HttpException {
     fn from(err: bb8_redis::redis::RedisError) -> Self {
         tracing::error!(%err);

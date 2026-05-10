@@ -2,9 +2,10 @@
 
 use super::sea_orm_active_enums::Category;
 use sea_orm::entity::prelude::*;
-use serde::ser::{Serialize, SerializeStruct, Serializer};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
+#[sea_orm::model]
+#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Deserialize, Serialize)]
 #[sea_orm(table_name = "post")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -13,54 +14,29 @@ pub struct Model {
     pub title: String,
     pub text: String,
     pub category: Option<Category>,
+    #[serde(with = "super::serde_time")]
     pub created_at: Option<DateTimeUtc>,
+    #[serde(with = "super::serde_time")]
     pub updated_at: Option<DateTimeUtc>,
     pub user_id: i32,
+    #[sea_orm(belongs_to, from = "user_id", to = "id")]
+    pub user: HasOne<super::user::Entity>,
 }
 
-impl Serialize for Model {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+#[async_trait::async_trait]
+impl ActiveModelBehavior for ActiveModel {
+    /// Will be triggered before insert / update
+    async fn before_save<C>(mut self, _db: &C, insert: bool) -> Result<Self, DbErr>
     where
-        S: Serializer,
+        C: ConnectionTrait,
     {
-        let mut state = serializer.serialize_struct("Model", 6)?;
-        state.serialize_field("id", &self.id)?;
-        state.serialize_field("userId", &self.user_id)?;
-        state.serialize_field("title", &self.title)?;
-        state.serialize_field("text", &self.text)?;
-        state.serialize_field("category", &self.category)?;
-        state.serialize_field(
-            "createdAt",
-            &self
-                .created_at
-                .map(|created_at| created_at.format("%Y-%m-%d %H:%M:%S").to_string()),
-        )?;
-        state.serialize_field(
-            "updatedAt",
-            &self
-                .updated_at
-                .map(|updated_at| updated_at.format("%Y-%m-%d %H:%M:%S").to_string()),
-        )?;
-        state.end()
+        let now = chrono::Utc::now();
+        self.updated_at = sea_orm::Set(Some(now));
+
+        if insert {
+            self.created_at = sea_orm::Set(Some(now));
+        }
+
+        Ok(self)
     }
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::user::Entity",
-        from = "Column::UserId",
-        to = "super::user::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    User,
-}
-
-impl Related<super::user::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::User.def()
-    }
-}
-
-impl ActiveModelBehavior for ActiveModel {}

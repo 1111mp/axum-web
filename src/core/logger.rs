@@ -5,8 +5,8 @@ use tracing_appender::{
 };
 use tracing_subscriber::{filter::filter_fn, fmt, layer::SubscriberExt, EnvFilter, Layer};
 
-pub fn logger_init() -> (WorkerGuard, WorkerGuard) {
-    let logger_dir = std::env::var("LOG_DIR").unwrap_or("./logs".to_string());
+pub fn logger_init(config: &super::config::Config) -> (WorkerGuard, WorkerGuard) {
+    let logger_dir = config.log_dir();
     let info_file_appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
         .filename_prefix("app.info")
@@ -14,7 +14,7 @@ pub fn logger_init() -> (WorkerGuard, WorkerGuard) {
         // maybe will replace with size-based rotation
         // wait PR: https://github.com/tokio-rs/tracing/pull/2497
         .max_log_files(14)
-        .build(&logger_dir)
+        .build(logger_dir)
         .expect("Initializing rolling info file appender failed");
     let error_file_appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
@@ -23,13 +23,17 @@ pub fn logger_init() -> (WorkerGuard, WorkerGuard) {
         // maybe will replace with size-based rotation
         // wait PR: https://github.com/tokio-rs/tracing/pull/2497
         .max_log_files(14)
-        .build(&logger_dir)
+        .build(logger_dir)
         .expect("Initializing rolling error file appender failed");
+
     let (info_non_blocking, info_guard) = tracing_appender::non_blocking(info_file_appender);
     let (error_non_blocking, error_guard) = tracing_appender::non_blocking(error_file_appender);
 
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(config.log_level()));
+
     let subscriber = tracing_subscriber::registry()
-        .with(EnvFilter::from_default_env())
+        .with(env_filter)
         .with(fmt::Layer::new().with_writer(std::io::stdout))
         .with(
             fmt::Layer::new()

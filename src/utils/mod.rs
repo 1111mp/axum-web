@@ -1,3 +1,5 @@
+pub mod singleton;
+
 use tower_cookies::Cookie;
 
 /// get cookie value by name
